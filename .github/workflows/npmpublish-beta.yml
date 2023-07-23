@@ -30,6 +30,6 @@ jobs:
           npm -f version "$currentVersion-beta.${{ github.event.inputs.betaVersion }}"
           git push
       - run: npm ci
-      - run: npm publish --tag beta
-        env:
-          NODE_AUTH_TOKEN: ${{secrets.npm_token}}
+#      - run: npm publish --tag beta
+#        env:
+#          NODE_AUTH_TOKEN: ${{secrets.npm_token}}
