@@ -24,7 +24,8 @@ jobs:
         run: |
           sudo apt upgrade && sudo apt install jq -y
           npm --no-git-tag-version version patch
-          currentVersion=$(jq --raw-output '.version' package.json)
+          currentVersion=$(jq --raw-output '.version' package.json | grep -w "[0-9]*\.[0-9]*\.[0-9]*" -oh)
+          echo "ℹ️ Current Version: $currentVersion"
           git config --global user.name 'GIT Package Updater'
           git config --global user.email 'razorRun@users.noreply.github.com'
           npm -f version "$currentVersion-beta.${{ github.event.inputs.betaVersion }}"
