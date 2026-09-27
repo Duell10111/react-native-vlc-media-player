@@ -11,6 +11,7 @@ import com.facebook.react.uimanager.SimpleViewManager;
 import com.facebook.react.uimanager.ThemedReactContext;
 import com.facebook.react.uimanager.annotations.ReactProp;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import javax.annotation.Nullable;
@@ -158,55 +159,104 @@ public class ReactVlcPlayerViewManager extends SimpleViewManager<ReactVlcPlayerV
         videoView.setAcceptInvalidCertificates(accept);
     }
 
-    public void startRecording(final ReactVlcPlayerView videoView, final String recordingPath) {
-        videoView.startRecording(recordingPath);
-    }
-
-    public void stopRecording(final ReactVlcPlayerView videoView) {
-        videoView.stopRecording();
-    }
-
-    public void stopPlayer(final ReactVlcPlayerView videoView) {
-        videoView.stopPlayer();
-    }
-
-    public void snapshot(final ReactVlcPlayerView videoView, final String path) {
-        videoView.doSnapshot(path);
-    }
+    /**
+     * The commands the JS spec (src/VlcPlayerViewNativeComponent.ts) declares.
+     * The first three keep their historical integer ids, so anything dispatching
+     * raw ids instead of names still reaches the same command.
+     */
+    private static final String[] COMMANDS = {
+            "startRecording",
+            "stopRecording",
+            "snapshot",
+            "stopPlayer",
+            "seek",
+            "applyResume",
+            "applyPaused",
+            "applyAutoAspectRatio",
+            "applyAspectRatio"
+    };
 
     @Override
     public Map<String, Integer> getCommandsMap() {
-        return MapBuilder.of(
-            "startRecording", 1,
-            "stopRecording", 2,
-            "snapshot", 3
-        );
+        Map<String, Integer> commands = new HashMap<>();
+        for (int i = 0; i < COMMANDS.length; i++) {
+            commands.put(COMMANDS[i], i + 1);
+        }
+        return commands;
+    }
+
+    /**
+     * Retained for anything still dispatching integer ids by hand. codegen
+     * dispatches command names, so the String overload below is the live path.
+     */
+    @Override
+    public void receiveCommand(ReactVlcPlayerView root, int commandId, @Nullable ReadableArray args) {
+        if (commandId >= 1 && commandId <= COMMANDS.length) {
+            receiveCommand(root, COMMANDS[commandId - 1], args);
+        }
     }
 
     @Override
-    public void receiveCommand(ReactVlcPlayerView root, int commandId, @Nullable ReadableArray args) {
+    public void receiveCommand(ReactVlcPlayerView root, String commandId, @Nullable ReadableArray args) {
         switch (commandId) {
-            case 1:
-                if (args != null && args.size() > 0 && !args.isNull(0)) {
-                    String path = args.getString(0);
-                    root.startRecording(path);
-                }
+            case "startRecording":
+                root.startRecording(stringArg(args));
                 break;
 
-            case 2:
+            case "stopRecording":
                 root.stopRecording();
                 break;
 
-            case 3:
-                if (args != null && args.size() > 0 && !args.isNull(0)) {
-                    String path = args.getString(0);
+            case "stopPlayer":
+                root.stopPlayer();
+                break;
+
+            case "snapshot":
+                String path = stringArg(args);
+                if (path != null) {
                     root.doSnapshot(path);
                 }
+                break;
+
+            case "seek":
+                if (hasArg(args)) {
+                    root.setPosition((float) args.getDouble(0));
+                }
+                break;
+
+            case "applyResume":
+                if (hasArg(args)) {
+                    root.doResume(args.getBoolean(0));
+                }
+                break;
+
+            case "applyPaused":
+                if (hasArg(args)) {
+                    root.setPausedModifier(args.getBoolean(0));
+                }
+                break;
+
+            case "applyAutoAspectRatio":
+                if (hasArg(args)) {
+                    root.setAutoAspectRatio(args.getBoolean(0));
+                }
+                break;
+
+            case "applyAspectRatio":
+                root.setAspectRatio(stringArg(args));
                 break;
 
             default:
                 break;
         }
+    }
+
+    private static boolean hasArg(@Nullable ReadableArray args) {
+        return args != null && args.size() > 0 && !args.isNull(0);
+    }
+
+    private static @Nullable String stringArg(@Nullable ReadableArray args) {
+        return hasArg(args) ? args.getString(0) : null;
     }
 
     private boolean startsWithValidScheme(String uriString) {

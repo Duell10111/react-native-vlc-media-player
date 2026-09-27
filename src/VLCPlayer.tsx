@@ -1,76 +1,18 @@
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
 import type { ComponentRef } from 'react';
-import {
-  findNodeHandle,
-  Image,
-  StyleSheet,
-  UIManager,
-  requireNativeComponent,
-  type HostComponent,
-  type NativeSyntheticEvent,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import { Image, StyleSheet } from 'react-native';
 
+import VlcPlayerView, { Commands } from './VlcPlayerViewNativeComponent';
+import type { NativeSource } from './VlcPlayerViewNativeComponent';
 import type {
-  OnPlayingEventProps,
-  OnProgressEventProps,
   OnRecordingStateEventProps,
-  OnSnapshotEventProps,
   PlaybackMethods,
-  SimpleCallbackEventProps,
-  VideoInfo,
-  VLCPlayerCallbackProps,
   VLCPlayerNativeOnlyProps,
   VLCPlayerProps,
   VLCPlayerSource,
 } from './types';
 
-const COMPONENT_NAME = 'RCTVLCPlayer';
-
-/**
- * The shape the native view actually receives. Deliberately loose: it is the
- * legacy `requireNativeComponent` contract, which Phase 2a replaces with a
- * codegen spec.
- */
-type NativeVLCPlayerProps = {
-  style?: StyleProp<ViewStyle>;
-  source: VLCPlayerSource & { isNetwork?: boolean; autoplay?: boolean };
-  src: {
-    uri: string;
-    isNetwork: boolean;
-    isAsset: boolean;
-    type: string;
-    mainVer: number;
-    patchVer: number;
-  };
-  progressUpdateInterval: number;
-  onVideoLoadStart?: (
-    e: NativeSyntheticEvent<SimpleCallbackEventProps>
-  ) => void;
-  onVideoOpen?: (e: NativeSyntheticEvent<SimpleCallbackEventProps>) => void;
-  onVideoError?: (e: NativeSyntheticEvent<SimpleCallbackEventProps>) => void;
-  onVideoProgress?: (e: NativeSyntheticEvent<OnProgressEventProps>) => void;
-  onVideoEnded?: (e: NativeSyntheticEvent<SimpleCallbackEventProps>) => void;
-  onVideoEnd?: (e: NativeSyntheticEvent<SimpleCallbackEventProps>) => void;
-  onVideoPlaying?: (e: NativeSyntheticEvent<OnPlayingEventProps>) => void;
-  onVideoPaused?: (e: NativeSyntheticEvent<SimpleCallbackEventProps>) => void;
-  onVideoStopped?: () => void;
-  onVideoBuffering?: (
-    e: NativeSyntheticEvent<SimpleCallbackEventProps>
-  ) => void;
-  onVideoLoad?: (e: NativeSyntheticEvent<VideoInfo>) => void;
-  onRecordingState?: (
-    e: NativeSyntheticEvent<OnRecordingStateEventProps>
-  ) => void;
-  onSnapshot?: (e: NativeSyntheticEvent<OnSnapshotEventProps>) => void;
-} & Omit<VLCPlayerProps, 'source' | 'style' | keyof VLCPlayerCallbackProps> &
-  VLCPlayerNativeOnlyProps;
-
-const RCTVLCPlayer: HostComponent<NativeVLCPlayerProps> =
-  requireNativeComponent<NativeVLCPlayerProps>(COMPONENT_NAME);
-
-type NativeRef = ComponentRef<HostComponent<NativeVLCPlayerProps>>;
+type NativeRef = ComponentRef<typeof VlcPlayerView>;
 
 const styles = StyleSheet.create({
   base: {
@@ -89,27 +31,19 @@ function resolveSource(
   source: VLCPlayerProps['source'],
   autoplay: boolean,
   repeat: boolean | undefined
-) {
+): NativeSource {
   const resolved =
     typeof source === 'number'
       ? ((Image.resolveAssetSource(source) ?? {}) as VLCPlayerSource)
       : (source ?? ({} as VLCPlayerSource));
 
-  let uri = resolved.uri || '';
-  if (uri.match(/^\//)) {
-    uri = `file://${uri}`;
-  }
-
-  const isAsset = !!uri.match(
-    /^(assets-library|file|content|ms-appx|ms-appdata):/
+  const uri = resolved.uri ?? '';
+  // Preserved from the original: anything that is not one of these schemes counts
+  // as network, and an absolute path counts as local.
+  const isAsset = /^(assets-library|file|content|ms-appx|ms-appdata):/.test(
+    uri
   );
-  let isNetwork = !!uri.match(/^https?:/);
-  if (!isAsset) {
-    isNetwork = true;
-  }
-  if (resolved.uri && resolved.uri.match(/^\//)) {
-    isNetwork = false;
-  }
+  const isNetwork = !isAsset && !uri.startsWith('/');
 
   const initOptions = [...(resolved.initOptions ?? [])];
   if (repeat) {
@@ -121,17 +55,7 @@ function resolveSource(
     }
   }
 
-  return {
-    source: { ...resolved, initOptions, isNetwork, autoplay },
-    src: {
-      uri,
-      isNetwork,
-      isAsset,
-      type: resolved.type || '',
-      mainVer: resolved.mainVer || 0,
-      patchVer: resolved.patchVer || 0,
-    },
-  };
+  return { ...resolved, initOptions, isNetwork, autoplay };
 }
 
 /**
@@ -140,7 +64,7 @@ function resolveSource(
  * The imperative methods are reachable through a ref:
  *
  * ```tsx
- * const player = useRef<VLCPlayerRef>(null);
+ * const player = useRef<PlaybackMethods>(null);
  * <VLCPlayer ref={player} source={{ uri }} />
  * player.current?.seek(0.5);
  * ```
@@ -161,6 +85,8 @@ const VLCPlayer = forwardRef<PlaybackMethods, VLCPlayerProps>(
       onRecordingCreated,
       onSnapshot,
       onStopped,
+      playInBackground: _playInBackground,
+      resizeMode: _resizeMode,
       repeat,
       source,
       style,
@@ -170,53 +96,48 @@ const VLCPlayer = forwardRef<PlaybackMethods, VLCPlayerProps>(
     const nativeRef = useRef<NativeRef | null>(null);
     const lastRecording = useRef<string | undefined>(undefined);
 
-    const setNativeProps = useCallback(
-      (nativeProps: Partial<VLCPlayerProps> & VLCPlayerNativeOnlyProps) => {
-        nativeRef.current?.setNativeProps(nativeProps);
-      },
-      []
-    );
-
-    const dispatchCommand = useCallback(
-      (command: string, args: unknown[] = []) => {
-        const node = findNodeHandle(nativeRef.current);
-        if (node == null) {
-          return;
-        }
-        UIManager.dispatchViewManagerCommand(
-          node,
-          UIManager.getViewManagerConfig(COMPONENT_NAME).Commands[command],
-          args
-        );
-      },
-      []
-    );
+    /** Commands need a mounted view; before mount there is nothing to talk to. */
+    const withView = useCallback((dispatch: (view: NativeRef) => void) => {
+      const view = nativeRef.current;
+      if (view != null) {
+        dispatch(view);
+      }
+    }, []);
 
     useImperativeHandle(
       ref,
       (): PlaybackMethods => ({
-        startRecording: (path) => dispatchCommand('startRecording', [path]),
-        stopRecording: () => dispatchCommand('stopRecording'),
-        stopPlayer: () => dispatchCommand('stopPlayer'),
-        snapshot: (path) => dispatchCommand('snapshot', [path]),
-        seek: (pos) => setNativeProps({ seek: pos }),
-        resume: (isResume) => setNativeProps({ resume: isResume }),
+        startRecording: (path) =>
+          withView((view) => Commands.startRecording(view, path)),
+        stopRecording: () => withView((view) => Commands.stopRecording(view)),
+        stopPlayer: () => withView((view) => Commands.stopPlayer(view)),
+        snapshot: (path) => withView((view) => Commands.snapshot(view, path)),
+        seek: (pos) => withView((view) => Commands.seek(view, pos)),
+        resume: (isResume = true) =>
+          withView((view) => Commands.applyResume(view, isResume)),
         autoAspectRatio: (isAuto) =>
-          setNativeProps({ autoAspectRatio: isAuto }),
+          withView((view) => Commands.applyAutoAspectRatio(view, isAuto)),
         changeVideoAspectRatio: (ratio) =>
-          setNativeProps({ videoAspectRatio: ratio }),
-        setNativeProps,
+          withView((view) => Commands.applyAspectRatio(view, ratio)),
+        setNativeProps: (
+          nativeProps: Partial<VLCPlayerProps> & VLCPlayerNativeOnlyProps
+        ) => {
+          // Deprecated passthrough; the library itself no longer uses it.
+          nativeRef.current?.setNativeProps(nativeProps);
+        },
       }),
-      [dispatchCommand, setNativeProps]
+      [withView]
     );
 
     const handleStopped = useCallback(() => {
-      setNativeProps({ paused: true });
+      // The player must not pick playback back up on the next render. This used
+      // to be setNativeProps({ paused: true }), which wrote behind React's back.
+      withView((view) => Commands.applyPaused(view, true));
       onStopped?.();
-    }, [onStopped, setNativeProps]);
+    }, [onStopped, withView]);
 
     const handleRecordingState = useCallback(
-      (event: NativeSyntheticEvent<OnRecordingStateEventProps>) => {
+      (event: { nativeEvent: OnRecordingStateEventProps }) => {
         const { isRecording, recordPath } = event.nativeEvent;
         if (lastRecording.current === recordPath) {
           return;
@@ -229,39 +150,31 @@ const VLCPlayer = forwardRef<PlaybackMethods, VLCPlayerProps>(
       [onRecordingCreated]
     );
 
-    const handleSnapshot = useCallback(
-      (event: NativeSyntheticEvent<OnSnapshotEventProps>) => {
-        if (event.nativeEvent.success) {
-          onSnapshot?.(event.nativeEvent);
-        }
-      },
-      [onSnapshot]
-    );
-
-    const resolved = resolveSource(source, autoplay, repeat);
-
     return (
-      <RCTVLCPlayer
+      <VlcPlayerView
         ref={nativeRef}
         {...rest}
         autoplay={autoplay}
         repeat={repeat}
         style={[styles.base, style]}
-        source={resolved.source}
-        src={resolved.src}
+        source={resolveSource(source, autoplay, repeat)}
         onVideoLoadStart={(e) => onLoadStart?.(e.nativeEvent)}
         onVideoOpen={(e) => onOpen?.(e.nativeEvent)}
         onVideoError={(e) => onError?.(e.nativeEvent)}
         onVideoProgress={(e) => onProgress?.(e.nativeEvent)}
-        onVideoEnded={(e) => onEnd?.(e.nativeEvent)}
         onVideoEnd={(e) => onEnd?.(e.nativeEvent)}
+        onVideoEnded={(e) => onEnd?.(e.nativeEvent)}
         onVideoPlaying={(e) => onPlaying?.(e.nativeEvent)}
         onVideoPaused={(e) => onPaused?.(e.nativeEvent)}
         onVideoStopped={handleStopped}
         onVideoBuffering={(e) => onBuffering?.(e.nativeEvent)}
         onVideoLoad={(e) => onLoad?.(e.nativeEvent)}
         onRecordingState={handleRecordingState}
-        onSnapshot={handleSnapshot}
+        onSnapshot={(e) => {
+          if (e.nativeEvent.success) {
+            onSnapshot?.(e.nativeEvent);
+          }
+        }}
         progressUpdateInterval={onProgress ? 250 : 0}
       />
     );

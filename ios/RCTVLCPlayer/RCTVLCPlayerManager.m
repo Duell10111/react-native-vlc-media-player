@@ -2,6 +2,7 @@
 #import "RCTVLCPlayer.h"
 #import "React/RCTBridge.h"
 #import "React/RCTUIManager.h"
+#import "React/RCTLog.h"
 
 @implementation RCTVLCPlayerManager
 
@@ -51,48 +52,62 @@ RCT_EXPORT_VIEW_PROPERTY(textTrack, int);
 RCT_EXPORT_VIEW_PROPERTY(autoplay, BOOL);
 RCT_EXPORT_VIEW_PROPERTY(acceptInvalidCertificates, BOOL);
 
-RCT_EXPORT_METHOD(startRecording:(nonnull NSNumber*) reactTag withPath:(NSString *)path) {
-    [self.bridge.uiManager addUIBlock:^(RCTUIManager *uiManager, NSDictionary<NSNumber *,UIView *> *viewRegistry) {
-        RCTVLCPlayer *view = viewRegistry[reactTag];
-        if (!view || ![view isKindOfClass:[RCTVLCPlayer class]]) {
+// Commands are declared in src/VlcPlayerViewNativeComponent.ts. codegen dispatches
+// them by name; RCTUIManager resolves the name against the methods exported here
+// and prepends the react tag.
+//
+// Phase 2b replaces this whole block: the bridge-bound uiManager lookup does not
+// exist under Bridgeless. Keeping it in one place with one helper is what makes
+// that a deletion rather than a rewrite.
+- (void)withView:(nonnull NSNumber *)reactTag perform:(void (^)(RCTVLCPlayer *view))block
+{
+    [self.bridge.uiManager addUIBlock:^(RCTUIManager *uiManager, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
+        UIView *view = viewRegistry[reactTag];
+        if (![view isKindOfClass:[RCTVLCPlayer class]]) {
             RCTLogError(@"Cannot find RCTVLCPlayer with tag #%@", reactTag);
             return;
         }
-        [view startRecording:path];
+        block((RCTVLCPlayer *)view);
     }];
 }
 
-RCT_EXPORT_METHOD(stopRecording:(nonnull NSNumber*) reactTag) {
-    [self.bridge.uiManager addUIBlock:^(RCTUIManager *uiManager, NSDictionary<NSNumber *,UIView *> *viewRegistry) {
-        RCTVLCPlayer *view = viewRegistry[reactTag];
-        if (!view || ![view isKindOfClass:[RCTVLCPlayer class]]) {
-            RCTLogError(@"Cannot find RCTVLCPlayer with tag #%@", reactTag);
-            return;
-        }
-        [view stopRecording];
-    }];
+RCT_EXPORT_METHOD(startRecording:(nonnull NSNumber *)reactTag withPath:(NSString *)path) {
+    [self withView:reactTag perform:^(RCTVLCPlayer *view) { [view startRecording:path]; }];
 }
 
-RCT_EXPORT_METHOD(stopPlayer:(nonnull NSNumber*) reactTag) {
-    [self.bridge.uiManager addUIBlock:^(RCTUIManager *uiManager, NSDictionary<NSNumber *,UIView *> *viewRegistry) {
-        RCTVLCPlayer *view = viewRegistry[reactTag];
-        if (!view || ![view isKindOfClass:[RCTVLCPlayer class]]) {
-            RCTLogError(@"Cannot find RCTVLCPlayer with tag #%@", reactTag);
-            return;
-        }
-        [view stopPlayer];
-    }];
+RCT_EXPORT_METHOD(stopRecording:(nonnull NSNumber *)reactTag) {
+    [self withView:reactTag perform:^(RCTVLCPlayer *view) { [view stopRecording]; }];
 }
 
-RCT_EXPORT_METHOD(snapshot:(nonnull NSNumber*) reactTag withPath:(NSString *)path) {
-    [self.bridge.uiManager addUIBlock:^(RCTUIManager *uiManager, NSDictionary<NSNumber *,UIView *> *viewRegistry) {
-        RCTVLCPlayer *view = viewRegistry[reactTag];
-        if (!view || ![view isKindOfClass:[RCTVLCPlayer class]]) {
-            RCTLogError(@"Cannot find RCTVLCPlayer with tag #%@", reactTag);
-            return;
-        }
-        [view snapshot:path];
-    }];
+RCT_EXPORT_METHOD(stopPlayer:(nonnull NSNumber *)reactTag) {
+    [self withView:reactTag perform:^(RCTVLCPlayer *view) { [view stopPlayer]; }];
+}
+
+RCT_EXPORT_METHOD(snapshot:(nonnull NSNumber *)reactTag withPath:(NSString *)path) {
+    [self withView:reactTag perform:^(RCTVLCPlayer *view) { [view snapshot:path]; }];
+}
+
+RCT_EXPORT_METHOD(seek:(nonnull NSNumber *)reactTag position:(nonnull NSNumber *)position) {
+    float pos = [position floatValue];
+    [self withView:reactTag perform:^(RCTVLCPlayer *view) { [view setSeek:pos]; }];
+}
+
+RCT_EXPORT_METHOD(applyResume:(nonnull NSNumber *)reactTag isResume:(BOOL)isResume) {
+    [self withView:reactTag perform:^(RCTVLCPlayer *view) { [view setResume:isResume]; }];
+}
+
+RCT_EXPORT_METHOD(applyPaused:(nonnull NSNumber *)reactTag paused:(BOOL)paused) {
+    [self withView:reactTag perform:^(RCTVLCPlayer *view) { [view setPaused:paused]; }];
+}
+
+RCT_EXPORT_METHOD(applyAspectRatio:(nonnull NSNumber *)reactTag ratio:(NSString *)ratio) {
+    [self withView:reactTag perform:^(RCTVLCPlayer *view) { [view setVideoAspectRatio:ratio]; }];
+}
+
+// MobileVLCKit has no automatic aspect ratio on this code path, so iOS answers the
+// command with nothing. It is declared so the command exists on both platforms and
+// RCTUIManager does not log "No command found with name".
+RCT_EXPORT_METHOD(applyAutoAspectRatio:(nonnull NSNumber *)reactTag isAuto:(BOOL)isAuto) {
 }
 
 @end

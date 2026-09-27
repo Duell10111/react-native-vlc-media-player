@@ -34,6 +34,13 @@ jobs:
       - name: Typecheck library
         run: npm run typecheck
 
+      # Parses src/VlcPlayerViewNativeComponent.ts with React Native's own codegen
+      # parser and diffs it against what the native view managers declare. Phase 2b
+      # and 2c generate native code from this spec, so a spec that does not parse or
+      # has drifted from the managers has to fail here, not there.
+      - name: Check codegen spec
+        run: npm run check-spec
+
       - name: Typecheck example
         run: npm run --workspace react-native-vlc-media-player-example typecheck
 

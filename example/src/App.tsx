@@ -186,6 +186,30 @@ export default function App() {
 
         <View style={styles.row}>
           <Button
+            label="resume(true)"
+            onPress={() => {
+              player.current?.resume(true);
+              append('resume(true)');
+            }}
+          />
+          <Button
+            label="resume(false)"
+            onPress={() => {
+              player.current?.resume(false);
+              append('resume(false)');
+            }}
+          />
+          <Button
+            label="Ratio 16:9"
+            onPress={() => {
+              player.current?.changeVideoAspectRatio('16:9');
+              append("changeVideoAspectRatio('16:9')");
+            }}
+          />
+        </View>
+
+        <View style={styles.row}>
+          <Button
             label={`Ratio ${ASPECT_RATIOS[aspectIndex]}`}
             onPress={() =>
               setAspectIndex((index) => (index + 1) % ASPECT_RATIOS.length)

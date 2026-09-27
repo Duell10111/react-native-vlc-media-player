@@ -295,13 +295,120 @@ Beides war vorher nicht sichtbar, weil nichts gebaut wurde:
 
 ### Phase 2a — JS-Spec (arch-agnostisch)
 
-- [ ] `src/VlcPlayerViewNativeComponent.ts` mit `codegenNativeComponent`,
+- [x] `src/VlcPlayerViewNativeComponent.ts` mit `codegenNativeComponent`,
       Events als `DirectEventHandler<…>`.
-- [ ] Commands via `codegenNativeCommands`: `startRecording`, `stopRecording`,
+      → 18 Props, 15 Events. Fabric-Name `VlcPlayerView`,
+      `paperComponentName: 'RCTVLCPlayer'`, damit die Old Arch weiter die
+      bestehenden View-Manager auflöst.
+- [x] Commands via `codegenNativeCommands`: `startRecording`, `stopRecording`,
       `stopPlayer`, `snapshot`, **`seek`**, `setResume`, `setAspectRatio`.
-- [ ] Die `setNativeProps`-Aufrufe in echte Props bzw. Commands überführen.
+      → neun Commands, aber die vier prop-spiegelnden heißen `applyResume`,
+      `applyPaused`, `applyAutoAspectRatio` und `applyAspectRatio`. Der Grund ist
+      kein Geschmack, sondern Codegen: siehe unten.
+- [x] Die `setNativeProps`-Aufrufe in echte Props bzw. Commands überführen.
       Öffentliche Methodensignaturen bleiben unverändert — der Umbau ist für
-      Konsumenten unsichtbar.
+      Konsumenten unsichtbar. → `setNativeProps` bleibt als deprecated
+      Passthrough am Ref, damit bestehende Aufrufe weiter kompilieren; die
+      Library selbst benutzt es nicht mehr.
+- [x] *Zusätzlich:* `scripts/check-codegen-spec.js` + `npm run check-spec` in der
+      CI. Das Skript parst die Spec mit React Natives **echtem** Codegen-Parser
+      und gleicht sie gegen die Props/Events ab, die die nativen View-Manager
+      deklarieren.
+
+#### Warum die Commands ihre native Gegenseite mitbringen mussten
+
+Ein Command ist ein zweiseitiger Vertrag. Der Plan hat 2a als rein
+JS-Phase geführt und `receiveCommand`-auf-String erst in 2d — diese Reihenfolge
+hätte zwischen 2a und 2d **alle** Commands auf Android gebrochen:
+`codegenNativeCommands` dispatcht Namen, und `ReactVlcPlayerViewManager`
+überschrieb nur die entfernte int-Variante; die String-Variante der Basisklasse
+ist ein No-op. Deshalb liefert 2a die minimale native Gegenseite mit:
+
+- **Android:** `receiveCommand(view, String, args)` mit allen neun Commands. Die
+  int-Variante bleibt und delegiert, wobei `startRecording`/`stopRecording`/
+  `snapshot` ihre historischen ids 1/2/3 behalten.
+- **iOS:** die vier bestehenden `RCT_EXPORT_METHOD`-Blöcke laufen jetzt über einen
+  `withView:perform:`-Helper, dazu fünf neue Commands. Der Block ist damit
+  geschlossen und in 2b löschbar statt umzubauen. `setSeek:`, `setResume:`,
+  `setPaused:` und `setVideoAspectRatio:` sind dafür im Header deklariert.
+
+`applyPaused` gibt es, weil der interne `onVideoStopped`-Handler bisher
+`setNativeProps({ paused: true })` benutzte, um hinter React's Rücken zu
+schreiben. `applyAutoAspectRatio` ist auf iOS bewusst ein leerer Handler: die
+Funktion existiert dort nicht, und ohne den Handler würde `RCTUIManager`
+„No command found with name" loggen.
+
+#### Die Namensregel: `applyX`, nicht `setX`
+
+Ein Command `setX` kollidiert mit einem Prop `x`. Codegen generiert für beide
+`setX(view, value)`, und das generierte `VlcPlayerViewManagerInterface.java`
+deklariert die Methode dann zweimal — javac bricht ab. Der Android-Build hat
+genau drei solche Fehler geworfen (`setResume`/`resume`, `setPaused`/`paused`,
+`setAutoAspectRatio`/`autoAspectRatio`). Die Commands, die ein Prop imperativ
+setzen, heißen deshalb `apply…`. `seek` bleibt `seek`, weil das Prop `seek` zu
+`setSeek` generiert und nicht kollidiert.
+
+**Warum überhaupt Commands und nicht einfach Props?** Weil `seek` und `resume`
+Aktionen sind, keine Zustände. Zweimal auf dieselbe Position springen erzeugt
+keine Prop-Änderung, React diffed den zweiten Aufruf weg — und
+`VLCPlayerView._reload` ruft genau so wiederholt `resume(false)`.
+
+#### Was Codegens eigener Parser korrigiert hat
+
+- `ReadonlyArray<T>` ist in Event-Payloads nicht erlaubt.
+- Ein Typalias als Array-Elementtyp wird nicht aufgelöst: `audioTracks: Track[]`
+  scheitert, die Track-Form muss inline stehen. `Track` existiert weiter für die
+  öffentliche API.
+
+Beides wäre erst in 2b/2c aufgefallen, wo Codegen tatsächlich läuft.
+
+#### Nebenbefunde
+
+- **`stopPlayer()` war auf Android nie verdrahtet.** `getCommandsMap()` kannte
+  nur `startRecording`, `stopRecording` und `snapshot`. Der Aufruf lief ins Leere.
+  Jetzt vorhanden.
+- **Das `src`-Prop liest keine der beiden Plattformen.** Es wurde bei jedem Render
+  mitgeschickt und ist entfallen.
+- **`resizeMode`, `playInBackground` und `poster` liest auch keine Plattform.**
+  Sie bleiben in `VLCPlayerProps` (als `@deprecated` markiert), werden aber nicht
+  mehr an die native View durchgereicht.
+- `resume()` ohne Argument bedeutet jetzt `resume(true)`. Vorher wurde
+  `undefined` gesetzt.
+#### Codegen läuft schon — halb
+
+Zwei verschiedene Codegen-Ausgaben, und sie sind unterschiedlich weit:
+
+- **Die JS-View-Config: läuft nicht.** Der Babel-Plugin
+  (`@react-native/babel-plugin-codegen`) greift im bob-Build nicht, `lib/` behält
+  den Runtime-Aufruf von `codegenNativeComponent`. Dessen Fallback ist
+  `requireNativeComponent(paperComponentName)` — also exakt das Verhalten von
+  vorher. Die statische View-Config entsteht später; erst dann wird die Spec für
+  die JS-Seite load-bearing, und ein fehlendes Prop verschwindet still.
+- **Die nativen Android-Artefakte: laufen.** Weil Phase 1
+  `apply plugin: 'com.facebook.react'` in `android/build.gradle` gesetzt hat,
+  generiert das RN-Gradle-Plugin die Library-Spec ohne weiteres Zutun — kein
+  `codegenConfig` nötig. Nach einem Example-Build liegen unter
+  `android/build/generated/source/codegen/` bereits:
+  `VlcPlayerViewManagerInterface.java`, `VlcPlayerViewManagerDelegate.java` und
+  der vollständige C++-Layer (`Props.h` mit `VlcPlayerViewSourceStruct`,
+  `EventEmitters.h`, `ShadowNodes.h`, `ComponentDescriptors.h`).
+
+Damit ist Phase 2d weniger Arbeit als geplant: die Delegate-Klasse, von der
+`VlcPlayerViewManager` erben soll, wird schon erzeugt. Und der Objektprop
+`source` übersetzt Codegen von sich aus in ein C++-Struct — der Punkt, an dem
+dieser Plan hätte scheitern können.
+
+Der generierte `VlcPlayerViewComponentDescriptor` ist zur Laufzeit noch
+ungenutzt: JS fragt über `paperComponentName` nach `RCTVLCPlayer`, nicht nach
+`VlcPlayerView`. Beides zusammenzuführen ist genau die Aufgabe von 2b/2d.
+
+#### Android sendet weniger, als die Typen behaupten
+
+Aufgefallen beim Abgleich: `VideoEventEmitter.progressChanged` schickt nur
+`currentTime` und `duration`, während `OnProgressEventProps` zusätzlich
+`position`, `remainingTime` und `target` deklariert. Die Typen sind von iOS
+abgeleitet. Das ist eine bestehende Ungenauigkeit, keine durch 2a entstandene —
+zu klären in Phase 2c/2d, wenn der Emitter auf `UIManagerHelper` umgestellt wird.
 
 ### Phase 2b — iOS auf Swift
 

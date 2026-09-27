@@ -34,6 +34,7 @@ export default tseslint.config(
     // The Expo config plugin and the build configs are plain CommonJS Node files.
     files: [
       'expo/**/*.js',
+      'scripts/**/*.js',
       'app.plugin.js',
       'babel.config.js',
       'example/babel.config.js',
@@ -46,6 +47,7 @@ export default tseslint.config(
         require: 'readonly',
         module: 'writable',
         process: 'readonly',
+        console: 'readonly',
         __dirname: 'readonly',
       },
     },

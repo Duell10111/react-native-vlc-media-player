@@ -15,7 +15,9 @@ export type {
   OnPlayingEventProps,
   OnProgressEventProps,
   OnRecordingStateEventProps,
+  OnSeekEventProps,
   OnSnapshotEventProps,
+  OnVideoStateChangeEventProps,
   PlaybackMethods,
   PlayerAspectRatio,
   PlayerResizeMode,
@@ -27,3 +29,11 @@ export type {
   VLCPlayerProps,
   VLCPlayerSource,
 } from './types';
+
+// The native contract, for anyone writing their own view around the native
+// component. `NativeProps` is also what Phase 2b/2c generate native code from.
+export { Commands as VlcPlayerViewCommands } from './VlcPlayerViewNativeComponent';
+export type {
+  NativeProps as VlcPlayerViewNativeProps,
+  NativeSource as VlcPlayerViewNativeSource,
+} from './VlcPlayerViewNativeComponent';

@@ -31,4 +31,12 @@
 - (void)stopRecording;
 - (void)stopPlayer;
 - (void)snapshot:(NSString*)path;
+
+// Implemented in RCTVLCPlayer.m and previously only reached through
+// RCT_EXPORT_VIEW_PROPERTY. Declared here because the view manager now also calls
+// them from the codegen commands.
+- (void)setSeek:(float)pos;
+- (void)setResume:(BOOL)resume;
+- (void)setPaused:(BOOL)paused;
+- (void)setVideoAspectRatio:(NSString *)ratio;
 @end

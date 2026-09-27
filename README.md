@@ -207,13 +207,31 @@ Callback props take a function that gets fired on various player events:
 
 #### Methods props
 
-Methods available on the VLC player ref
+Methods available on the VLC player ref. Each one dispatches a native command, so
+they work on both the Legacy and the New Architecture.
 
-| Prop                                | Description                                                                                                       |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `startRecording(directory: string)` | Start recording the current video into the given directory                                                        |
-| `stopRecording()`                   | Stop recording the current video. The final recording file can be obtained from the `onRecordingCreated` callback |
-| `snapshot(path: string)`            | Capture a snapshot of the current video frame to the given file path                                              |
+```tsx
+import { useRef } from 'react';
+import { VLCPlayer, type PlaybackMethods } from 'react-native-vlc-media-player';
+
+const player = useRef<PlaybackMethods>(null);
+
+<VLCPlayer ref={player} source={{ uri }} />;
+
+player.current?.seek(0.5);
+```
+
+| Method                                 | Description                                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `startRecording(directory: string)`    | Start recording the current video into the given directory                                                         |
+| `stopRecording()`                      | Stop recording the current video. The final recording file can be obtained from the `onRecordingCreated` callback   |
+| `stopPlayer()`                         | Stop playback                                                                                                      |
+| `snapshot(path: string)`               | Capture a snapshot of the current video frame to the given file path                                               |
+| `seek(pos: number)`                    | Seek to a fraction of the duration, between `0` and `1`                                                            |
+| `resume(isResume?: boolean)`           | Resume playback, or pause it with `false`. Defaults to `true`                                                      |
+| `autoAspectRatio(isAuto: boolean)`     | Toggle automatic aspect ratio. Android only; a no-op on iOS                                                        |
+| `changeVideoAspectRatio(ratio)`        | Set the aspect ratio, e.g. `"16:9"`                                                                                |
+| `setNativeProps(props)`                | **Deprecated.** Does not exist on the New Architecture. Use the methods above or the corresponding props           |
 
 VideoInfo example:
 

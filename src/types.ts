@@ -1,5 +1,28 @@
 import type { StyleProp, ViewProps, ViewStyle } from 'react-native';
 
+import type {
+  OnPlayingEventProps,
+  OnProgressEventProps,
+  OnSnapshotEventProps,
+  SimpleCallbackEventProps,
+  VideoInfo,
+} from './VlcPlayerViewNativeComponent';
+
+// The event payloads live in the native spec, because that is what the native
+// side actually sends. Re-exporting them keeps the public API from drifting away
+// from the contract the way the hand-written index.d.ts did.
+export type {
+  OnPlayingEventProps,
+  OnProgressEventProps,
+  OnRecordingStateEventProps,
+  OnSeekEventProps,
+  OnSnapshotEventProps,
+  OnVideoStateChangeEventProps,
+  SimpleCallbackEventProps,
+  Track,
+  VideoInfo,
+} from './VlcPlayerViewNativeComponent';
+
 /**
  * Video aspect ratio type
  */
@@ -8,6 +31,9 @@ export type PlayerAspectRatio =
 
 /**
  * Video resize mode
+ *
+ * @deprecated Neither platform reads this prop. It is kept so existing code keeps
+ * compiling; see MODERNIZATION.md.
  */
 export type PlayerResizeMode =
   'fill' | 'contain' | 'cover' | 'none' | 'scale-down';
@@ -57,85 +83,6 @@ export interface VLCPlayerSource {
    */
   patchVer?: number;
 }
-
-/**
- * Represents a track type in playback
- */
-export type Track = {
-  /**
-   * Track identification
-   */
-  id: number;
-
-  /**
-   * Track name
-   */
-  name: string;
-};
-
-/**
- * Represents a full playback information
- */
-export type VideoInfo = {
-  /**
-   * Total playback duration
-   */
-  duration: number;
-
-  /**
-   * Playback target
-   */
-  target: number;
-
-  /**
-   * Total playback video size
-   */
-  videoSize: Record<'width' | 'height', number>;
-
-  /**
-   * List of playback audio tracks
-   */
-  audioTracks: Track[];
-
-  /**
-   * List of playback text tracks
-   */
-  textTracks: Track[];
-};
-
-export type OnPlayingEventProps = Pick<VideoInfo, 'duration' | 'target'> & {
-  seekable: boolean;
-};
-
-export type OnProgressEventProps = Pick<VideoInfo, 'duration' | 'target'> & {
-  /**
-   * Current playback time
-   */
-  currentTime: number;
-
-  /**
-   * Current playback position
-   */
-  position: number;
-
-  /**
-   * Remaining time to end playback
-   */
-  remainingTime: number;
-};
-
-export type SimpleCallbackEventProps = Pick<VideoInfo, 'target'>;
-
-export type OnSnapshotEventProps = {
-  success: boolean;
-  path?: string;
-  error?: string;
-};
-
-export type OnRecordingStateEventProps = {
-  isRecording: boolean;
-  recordPath?: string;
-};
 
 export type VLCPlayerCallbackProps = {
   /**
@@ -223,8 +170,10 @@ export type VLCPlayerCallbackProps = {
 };
 
 /**
- * Props that only exist on the native view and are set imperatively through
- * `setNativeProps`. Phase 2a turns these into codegen commands.
+ * Props that only exist on the native view.
+ *
+ * @deprecated Only reachable through the deprecated `setNativeProps`. The
+ * imperative methods on the ref drive these through codegen commands now.
  */
 export type VLCPlayerNativeOnlyProps = {
   seek?: number;
@@ -257,6 +206,10 @@ export type VLCPlayerProps = VLCPlayerCallbackProps &
 
     /**
      * Set to `true` or `false` to loop the media
+     *
+     * Android only. On iOS, pass `--repeat` through `source.initOptions`, which
+     * this component does for you when `repeat` is set.
+     *
      * @default false
      */
     repeat?: boolean;
@@ -275,6 +228,8 @@ export type VLCPlayerProps = VLCPlayerCallbackProps &
 
     /**
      * Set the volume of the player
+     *
+     * Android only.
      */
     volume?: number;
 
@@ -295,26 +250,18 @@ export type VLCPlayerProps = VLCPlayerCallbackProps &
     textTrack?: number;
 
     /**
-     * Set to `true` or `false` to allow playing in the background
-     * @default false
-     */
-    playInBackground?: boolean;
-
-    /**
      * Video aspect ratio
      */
     videoAspectRatio?: PlayerAspectRatio | string;
 
     /**
      * Set to `true` or `false` to enable auto aspect ratio
+     *
+     * Android only.
+     *
      * @default false
      */
     autoAspectRatio?: boolean;
-
-    /**
-     * Set the behavior for the video size (fill, contain, cover, none, scale-down)
-     */
-    resizeMode?: PlayerResizeMode;
 
     /**
      * React native view stylesheet styles
@@ -336,10 +283,25 @@ export type VLCPlayerProps = VLCPlayerCallbackProps &
      * @default false
      */
     acceptInvalidCertificates?: boolean;
+
+    /**
+     * Set to `true` or `false` to allow playing in the background
+     *
+     * @deprecated Neither platform reads this prop.
+     */
+    playInBackground?: boolean;
+
+    /**
+     * Set the behavior for the video size (fill, contain, cover, none, scale-down)
+     *
+     * @deprecated Neither platform reads this prop; use `videoAspectRatio`.
+     */
+    resizeMode?: PlayerResizeMode;
   };
 
 /**
- * The imperative API exposed on a `VLCPlayer` / `VlCPlayerView` ref.
+ * The imperative API exposed on a `VLCPlayer` ref. Every method dispatches a
+ * codegen command, so it works on both architectures.
  */
 export type PlaybackMethods = {
   /**
@@ -368,17 +330,21 @@ export type PlaybackMethods = {
   /**
    * Seek to the given position
    *
-   * @param pos Position to seek to (as a percentage of the full duration)
+   * @param pos Position to seek to (as a fraction of the full duration)
    */
   seek(pos: number): void;
 
   /**
    * Resume playback
+   *
+   * @param isResume Whether to resume (default) or pause
    */
   resume(isResume?: boolean): void;
 
   /**
    * Change auto aspect ratio setting
+   *
+   * Android only; a no-op on iOS.
    *
    * @param isAuto Whether or not to use auto aspect ratio
    */
@@ -394,8 +360,9 @@ export type PlaybackMethods = {
   /**
    * Imperatively set props on the underlying native view.
    *
-   * @deprecated `setNativeProps` does not exist on the New Architecture. Use the
-   * dedicated methods above or the corresponding props instead.
+   * @deprecated `setNativeProps` does not exist on the New Architecture. The
+   * library itself no longer uses it; this passthrough only remains so existing
+   * calls keep compiling. Use the methods above or the corresponding props.
    */
   setNativeProps(
     nativeProps: Partial<VLCPlayerProps> & VLCPlayerNativeOnlyProps

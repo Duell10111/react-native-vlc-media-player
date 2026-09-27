@@ -32,9 +32,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test": "npm run lint && npm run typecheck",
+    "test": "npm run lint && npm run typecheck && npm run check-spec",
     "example": "npm run --workspace react-native-vlc-media-player-example",
-    "prepare": "bob build"
+    "prepare": "bob build",
+    "check-spec": "node scripts/check-codegen-spec.js"
   },
   "keywords": [
     "vlc",
