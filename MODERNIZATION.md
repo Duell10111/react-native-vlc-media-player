@@ -168,22 +168,130 @@ Ziel: Änderungen überhaupt überprüfbar machen.
 
 Ziel: Standard-Layout, generierte Typen, lauffähige Beispiel-App.
 
-- [ ] Auf das Layout von `create-react-native-library` ziehen.
-- [ ] `src/` in TypeScript, Build via `react-native-builder-bob`
+- [x] Auf das Layout von `create-react-native-library` ziehen.
+      → `src/`, `example/`, npm-Workspace. Die Example-App verlinkt die Library
+      über `file:..`; `"*"` reicht nicht, weil das Root-Package selbst kein
+      Workspace-Eintrag ist und npm sonst 1.0.98 aus der Registry zieht.
+- [x] `src/` in TypeScript, Build via `react-native-builder-bob`
       (commonjs / module / typescript).
-- [ ] ESLint + Prettier + `tsconfig.json`.
-- [ ] **`example/`-App mit Expo-Prebuild.** Wichtigster Einzelschritt für
-      Review-Fähigkeit.
-- [ ] **CI-Matrix über vier Konfigurationen:** iOS und Android, jeweils Old und
+      → Kein `exports`-Feld: bob's Non-ESM-Dual-Output ist CJS/ESM-ambivalentes
+      `.js`, und eine `exports`-Map würde die Deep-Imports verbieten, die vorher
+      funktionierten.
+- [x] ESLint + Prettier + `tsconfig.json`.
+      → ESLint 10 Flat Config mit `typescript-eslint` und
+      `eslint-plugin-react-hooks` 7. `eslint-plugin-react` deklariert ESLint 10
+      nicht und würde `npm ci` an einem Peer-Konflikt scheitern lassen.
+      `tsconfig` mit `strict`, `noUnusedLocals`, `noUnusedParameters`.
+- [x] **`example/`-App mit Expo-Prebuild.** Wichtigster Einzelschritt für
+      Review-Fähigkeit. → Expo SDK 54 / RN 0.81.6. `EXAMPLE_ARCH=old` schaltet
+      über `app.config.js` auf die Old Architecture um. Die App bedient die
+      gesamte imperative API (Seek, Snapshot, Recording, Aspect Ratio) und zeigt
+      an, auf welcher Architektur sie läuft.
+- [x] **CI-Matrix über vier Konfigurationen:** iOS und Android, jeweils Old und
       New Arch. Solange Old Arch supported ist, ist das die einzige Absicherung
       gegen stille Regressionen.
-- [ ] `index.d.ts` löschen — wird generiert.
-- [ ] Klassen-Component → Function-Component mit `forwardRef` +
-      `useImperativeHandle`; `prop-types` entfernen.
-- [ ] `resolveAssetSource`-Deep-Import auf `Image.resolveAssetSource` umstellen.
-- [ ] RN-Mindestversion festlegen und **in der Matrix verifizieren** — die
+- [x] `index.d.ts` löschen — wird generiert.
+- [x] Klassen-Component → Function-Component mit `forwardRef` +
+      `useImperativeHandle`; `prop-types` entfernen. → `prop-types` stand
+      ohnehin in keiner `dependencies`-Liste und wurde transitiv über RN
+      aufgelöst.
+- [x] `resolveAssetSource`-Deep-Import auf `Image.resolveAssetSource` umstellen.
+- [x] RN-Mindestversion festlegen und **in der Matrix verifizieren** — die
       benutzten Codegen-Features (`codegenNativeCommands`, Old-Arch-Fallback)
       bestimmen die Untergrenze, nicht die Wunschvorstellung.
+      → **`>=0.74.0`**, Matrix verifiziert `0.81.6`. Siehe den Kasten unten:
+      oberhalb von 0.81 *kann* die Old Arch nicht mehr verifiziert werden.
+
+#### Der Deckel auf der Old Architecture
+
+**RN 0.82 hat die Old Architecture entfernt.** `newArchEnabled=false` und
+`RCT_NEW_ARCH_ENABLED=0` werden dort ignoriert. RN 0.81 / Expo SDK 54 sind die
+letzten Versionen, in denen die vier Konfigurationen überhaupt existieren.
+
+Das hat zwei Konsequenzen für den Restplan:
+
+1. Die Example-App ist auf RN 0.81 festgenagelt, solange die Matrix vier Jobs
+   hat. Ein Update auf 0.82+ ist damit gleichbedeutend mit Phase 3.
+2. Phase 3 ist kein „irgendwann" mehr, sondern hat einen Auslöser: sobald die
+   RN-0.81-Reihe kein Sicherheitssupport mehr bekommt, wird das Festhalten an
+   der Old Arch zum Blocker für die eigene CI.
+
+#### Vorgezogen aus Phase 2b/2d
+
+Ohne diese Punkte baut die Example-App nicht, und ohne baubare App ist Phase 1
+wirkungslos. Bewusst nur das Minimum:
+
+- [x] `android/build.gradle`: `buildscript`-Block mit AGP 4.0.2 entfernt,
+      `com.facebook.react:react-native:+` → `apply plugin: 'com.facebook.react'`
+      + `com.facebook.react:react-android`, wirkungsloses mvnrepository-Repo
+      entfernt, `compileOptions` auf Java 17, `compileSdk`/`minSdk` statt der in
+      AGP 9 entfallenden `*Version`-Varianten.
+- [x] Podspec: `install_modules_dependencies(s)` statt `s.dependency 'React'`
+      (definiert `RCT_NEW_ARCH_ENABLED`), `deployment_target` 8.4/10.2 → 13.4.
+      13.4 ist das Minimum von RN 0.74 und damit passend zur deklarierten
+      Untergrenze; Phase 2b hebt zusammen mit Swift auf 15.1.
+- [x] Expo-Plugin `withGradleTasks`: Der Anker
+      `applyNativeModulesAppBuildGradle(project)` existiert in RN-≥0.71- und
+      Expo-Templates nicht mehr — `expo prebuild` **crashte** daran. Jetzt
+      `apply plugin: "com.facebook.react"`. Zusätzlich ist die
+      `libc++_shared.so`-Bereinigung null-safe: vorher lief sie bei nicht
+      gefundenem Verzeichnis in eine NPE mitten im Build.
+
+Noch offen und bewusst bei Phase 2d gelassen: Gradle Wrapper 6.9,
+`androidx.legacy:legacy-support-v4`.
+
+#### Verhaltensänderungen in Phase 1
+
+Der Umbau ist signaturgleich, aber an vier Stellen ist altes Verhalten
+nachweisbar falsch und wurde mit korrigiert:
+
+1. `source` wird nicht mehr mutiert. `resolveAssetSource` gibt Objekt-Quellen
+   unverändert zurück, der Player schrieb also `isNetwork`, `autoplay` und
+   `--repeat` in das Objekt des Aufrufers.
+2. `TimeLimit` renderte auskommentierte Zeilen als JSX-Textkinder (`//`) direkt
+   in einer `TouchableOpacity` — „Text strings must be rendered within a
+   `<Text>`". Jeder, der die Werbevorlauf-Funktion (`isGG`) benutzte, bekam einen
+   Crash.
+3. `VLCPlayerView.componentWillUnmount` rief `_onStopped()`, was das `onStopped`-
+   Prop (also `onEnded`) während des Unmounts feuerte und darin `setState`
+   aufrief. Jetzt wird nur noch die native View pausiert.
+4. `SizeController.getChangeRatio()` gab auf den meisten Geräten einen String
+   (`"1.33"`) und auf manchen die Zahl `1` zurück. Jetzt durchgängig `number`.
+
+Nicht mitkorrigiert, weil es sichtbares Verhalten ändern würde:
+`Orientation.lockToPortrait` / `lockToLandscape` in `playerView/index.tsx` sind
+im Original hängende Ausdrücke ohne Aufruf. Die Stellen sind kommentiert und
+gehören zu Phase 4.
+
+Die einzige echte Bruchstelle ist der **Deep Import**: `…/VLCPlayer` und
+`…/playerView/…` liegen jetzt unter `lib/`. Dokumentiert war nur
+`import { VLCPlayer, VlCPlayerView } from 'react-native-vlc-media-player'`, und
+das ist unverändert; ein `exports`-Feld wurde gerade deshalb *nicht* eingeführt.
+Gehört in die Release Notes.
+
+#### Was der erste echte Build zutage gebracht hat
+
+Beides war vorher nicht sichtbar, weil nichts gebaut wurde:
+
+- **`minSdk 26` gegen Template-Default 24.** Der Manifest-Merger bricht mit
+  `minSdkVersion 24 cannot be smaller than version 26` ab. Das trifft jeden
+  Expo-Nutzer. Im README dokumentiert, in der Example-App über
+  `expo-build-properties` gesetzt.
+- **Die Old-Arch-iOS-Konfiguration baut React Native aus dem Quellcode.** Expo
+  setzt `RCT_USE_PREBUILT_RNCORE`/`RCT_USE_RN_DEP` nur, wenn
+  `newArchEnabled != 'false'`. Folge: `Pods/fmt` 11.0.2 wird mitkompiliert und
+  scheitert am clang aus Xcode 26+ (`call to consteval function … is not a
+  constant expression`). Der CI-Job pinnt daher Xcode 16.4. Lokal auf macOS 26+
+  ist diese eine Konfiguration nicht baubar — zusätzlich bricht dort Apples
+  `openrsync` die CocoaPods-Phase `[CP] Copy XCFrameworks` von MobileVLCKit.
+  Verifiziert wurden lokal drei der vier Konfigurationen; die vierte hängt an
+  diesen beiden Toolchain-Punkten, nicht an diesem Repo.
+- **`install_modules_dependencies` setzt `-DRCT_NEW_ARCH_ENABLED=1` nur in
+  `OTHER_CPLUSPLUSFLAGS` und `OTHER_SWIFT_FLAGS`**, nicht in
+  `GCC_PREPROCESSOR_DEFINITIONS`. Für reine `.m`-Dateien ist das Makro also nicht
+  definiert. Der `#ifndef RCT_NEW_ARCH_ENABLED`-Guard um `RCTVLCPlayerManager.m`
+  aus Phase 2b greift so nicht — die Datei muss `.mm` werden oder der Guard
+  anders gezogen werden.
 
 ### Phase 2a — JS-Spec (arch-agnostisch)
 

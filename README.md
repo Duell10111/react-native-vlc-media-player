@@ -2,8 +2,13 @@
 
 ## Supported RN Versions
 
-- 0.59 > 0.62 and up
-- PODs are updated to work with 0.61 and up (tested in 0.61.5, 0.62 and 0.63)
+- React Native `>= 0.74` (declared in `peerDependencies`)
+- CI builds the example app against React Native `0.81.6` on **iOS and Android,
+  each on the Legacy and the New Architecture**.
+- React Native `0.82` removed the Legacy Architecture. The player still runs
+  through the legacy view manager, so on `0.82+` it currently relies on the
+  interop layer — full Fabric/codegen support is tracked in
+  [`MODERNIZATION.md`](MODERNIZATION.md).
 
 ## Supported formats
 
@@ -13,7 +18,10 @@ Play MKV, multiple audio tracks (including 5.1), and subtitles tracks (including
 
 ## Sample repo
 
+The repo contains a runnable example app in [`example/`](example) — see
+[Contributing](#contributing). There is also a standalone
 [VLC Media Player test](https://github.com/razorRun/react-native-vlc-media-player-test)
+project.
 
 ## Add it to your project
 
@@ -31,34 +39,42 @@ If not using Expo also run
 
 ## Android
 
-Should work without any specific settings. Gradle build might fail with `More than one file was found with OS independent path 'lib/x86/libc++_shared.so'` error.
+**Requires `minSdkVersion` 26.** The library declares it, so a lower value in your
+app fails the manifest merger with `minSdkVersion 24 cannot be smaller than
+version 26`. Raise it in `android/app/build.gradle`, or with Expo through
+[`expo-build-properties`](https://docs.expo.dev/versions/latest/sdk/build-properties/):
+
+```json
+["expo-build-properties", { "android": { "minSdkVersion": 26 } }]
+```
+
+Beyond that it should work without specific settings. The Gradle build might fail
+with `More than one file was found with OS independent path 'lib/x86/libc++_shared.so'`.
 
 If that happens, add the following block to your `android/app/build.gradle`:
 
 ```gradle
-tasks.whenTaskAdded((tas -> {
-    // when task is 'mergeLocalDebugNativeLibs' or 'mergeLocalReleaseNativeLibs'
-    if (tas.name.contains("merge") && tas.name.contains("NativeLibs")) {
-        tasks.named(tas.name) {it
-            doFirst {
-                java.nio.file.Path notNeededDirectory = it.externalLibNativeLibs
-                        .getFiles()
-                        .stream()
-                        // for React Native 0.71, the file value now contains "jetified-react-android" instead of "jetified-react-native"
-                        .filter(file -> file.toString().contains("jetified-react-native"))
-                        .findAny()
-                        .orElse(null)
-                        .toPath();
-                java.nio.file.Files.walk(notNeededDirectory).forEach(file -> {
-                    if (file.toString().contains("libc++_shared.so")) {
-                        java.nio.file.Files.delete(file);
-                    }
-                });
+tasks.whenTaskAdded { task ->
+    if (task.name.contains("merge") && task.name.contains("NativeLibs")) {
+        task.doFirst {
+            // React Native >= 0.71 ships as "react-android"; on older versions the
+            // directory is named "jetified-react-native".
+            def reactNativeLibDir = task.externalLibNativeLibs.getFiles().find {
+                it.toString().contains("jetified-react-android")
+            }
+            if (reactNativeLibDir != null) {
+                java.nio.file.Files.walk(reactNativeLibDir.toPath()).withCloseable { paths ->
+                    paths.filter { it.toString().contains("libc++_shared.so") }
+                         .forEach { java.nio.file.Files.delete(it) }
+                }
             }
         }
     }
-}))
+}
 ```
+
+Expo users get this automatically from the config plugin (see [Expo](#expo)) and
+do not need to add it by hand.
 
 ### Explanation
 `react-native` and `LibVLC` both import `libc++_shared.so`, but we cannot use `packagingOptions.pickFirst` to handle this case, because `libvlc-all:3.6.0-eap5` will crash when using `libc++_shared.so`, so we have to use `libc++_shared.so` from `LibVLC`.
@@ -228,15 +244,43 @@ Network streaming formats: Apple HLS, Flash RTMP, MPEG-DASH, MPEG Transport Stre
 Subtitles: Advanced SubStation Alpha, Closed Captions, DVB, DVD-Video, MPEG-4 Timed Text, MPL2, OGM, SubStation Alpha, SubRip, SVCD, Teletext, Text file, VobSub, WebVTT, TTML
 Video coding formats: Cinepak, Dirac, DV, H.263, H.264/MPEG-4 AVC, H.265/MPEG HEVC, AV1, HuffYUV, Indeo 3, MJPEG, MPEG-1, MPEG-2, MPEG-4 Part 2, RealVideo 3&4, Sorenson, Theora, VC-1,[h] VP5, VP6, VP8, VP9, DNxHD, ProRes and some WMV.
 
-## Got a few minutes to spare? Please help us to keep this repo up to date and simple to use.
+## Contributing
 
-#### Our idea was to keep the repo simple, and people can use it with newer RN versions without any additional config.
+The repo ships an example app, so you no longer need a separate test project.
 
-1. Get a fork of this repo and clone [VLC Media Player test](https://github.com/razorRun/react-native-vlc-media-player-test)
-2. Run it for ios and android locally using your fork, and do the changes. (remove this package using `npm remove react-native-vlc-media-player` and install the forked version from git hub `npm i https://git-address-to-your-forked-repo`)
-3. Verify your changes and make sure everything works on both platforms. (If you need a hand with testing I might be able to help as well)
-4. Send PR.
-5. Be happy, Cause you're a Rockstar 🌟 ❤️
+```sh
+npm install                # installs the library and the example workspace
+
+npm run lint               # ESLint
+npm run typecheck          # tsc --noEmit
+npm run build              # react-native-builder-bob -> lib/
+
+cd example
+npx expo prebuild --platform android   # or ios
+npx expo run:android                   # or run:ios
+```
+
+The example app links the library from `../src`, so a change in `src/` shows up
+without rebuilding `lib/`.
+
+### Testing both architectures
+
+`EXAMPLE_ARCH=old` prebuilds against the Legacy Architecture:
+
+```sh
+cd example
+EXAMPLE_ARCH=old npx expo prebuild --platform android --clean
+```
+
+Both architectures are still supported, so please check a change against both —
+that is exactly what the four CI jobs do. Note that React Native `0.81` is the
+last version where this switch exists at all.
+
+### Then
+
+1. Verify your change in the example app on both platforms.
+2. Send a PR. `npm run lint && npm run typecheck && npm run build` has to pass.
+3. Be happy, cause you're a Rockstar 🌟 ❤️
 
 ## Known Issues
 

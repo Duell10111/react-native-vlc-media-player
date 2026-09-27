@@ -2,19 +2,18 @@
   "name": "react-native-vlc-media-player",
   "version": "1.0.103",
   "description": "React native media player for video streaming and playing. Supports RTSP,RTMP and other protocols supported by VLC player",
-  "main": "index.js",
-  "typings": "index.d.ts",
+  "main": "lib/commonjs/index.js",
+  "module": "lib/module/index.js",
+  "types": "lib/typescript/src/index.d.ts",
+  "source": "src/index.tsx",
   "files": [
-    "index.js",
-    "index.d.ts",
-    "VLCPlayer.js",
+    "src",
+    "lib",
     "app.plugin.js",
     "react-native-vlc-media-player.podspec",
-    "playerView",
     "expo",
     "android/src",
     "android/build.gradle",
-    "android/gradle.properties",
     "android/proguard-rules.pro",
     "ios/RCTVLCPlayer",
     "README.md",
@@ -22,8 +21,20 @@
     "!**/__tests__",
     "!**/.*"
   ],
+  "workspaces": [
+    "example"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "bob build",
+    "clean": "del-cli lib",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run lint && npm run typecheck",
+    "example": "npm run --workspace react-native-vlc-media-player-example",
+    "prepare": "bob build"
   },
   "keywords": [
     "vlc",
@@ -48,6 +59,22 @@
     "react": ">=18.2.0",
     "react-native": ">=0.74.0"
   },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@expo/config-plugins": "^7.2.2",
+    "@types/react": "^19.1.17",
+    "@types/react-native-vector-icons": "^6.4.18",
+    "del-cli": "^7.0.0",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.9.9",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-builder-bob": "^0.43.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.1"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/razorRun/react-native-vlc-media-player.git"
@@ -57,8 +84,18 @@
     "url": "https://github.com/razorRun/react-native-vlc-media-player/issues"
   },
   "homepage": "https://github.com/razorRun/react-native-vlc-media-player#readme",
-  "devDependencies": {
-    "@expo/config-plugins": "^7.2.2",
-    "@types/react": "~18.2.14"
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      "commonjs",
+      "module",
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
+    ]
   }
 }

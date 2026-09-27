@@ -1,27 +1,33 @@
 import groovy.json.JsonSlurper
 
 apply plugin: 'com.android.library'
+// Provides the `com.facebook.react:react-android` version. The plugin itself comes
+// from the consuming app's root build.gradle, which every RN >= 0.71 template has.
+apply plugin: 'com.facebook.react'
 
 // Single source of truth for the VLC version: the "vlc" field in package.json.
-// Keep in sync with react-native-vlc-media-player.podspec and expo/ios/withMobileVlcKit.js,
-// which read the same field.
+// Keep in sync with react-native-vlc-media-player.podspec and
+// expo/ios/withMobileVlcKit.js, which read the same field.
 def packageJson = new JsonSlurper().parseText(file("../package.json").text)
 def vlcVersion = packageJson.vlc.android
 
 android {
     namespace 'com.yuanzhou.vlc'
-    compileSdkVersion 35
+    compileSdk 35
 
     defaultConfig {
-        minSdkVersion 26
-        targetSdkVersion 35
-        versionCode 1
-        versionName "1.0"
+        minSdk 26
         consumerProguardFiles("proguard-rules.pro")
         ndk {
-            abiFilters 'armeabi-v7a','x86_64','arm64-v8a','x86'
+            abiFilters 'armeabi-v7a', 'x86_64', 'arm64-v8a', 'x86'
         }
     }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
     buildTypes {
         release {
             minifyEnabled false
@@ -29,29 +35,14 @@ android {
         }
     }
 }
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-        // maven { url "https://maven.appspector.com/artifactory/android-sdk" }
-
-    }
-    dependencies {
-        classpath("com.android.tools.build:gradle:4.0.2")
-    }
-}
 
 repositories {
-    maven {
-        url "https://mvnrepository.com/artifact/org.videolan.android"
-    }
     google()
     mavenCentral()
 }
 
 dependencies {
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation "com.facebook.react:react-native:+"
+    implementation "com.facebook.react:react-android"
     implementation 'androidx.legacy:legacy-support-v4:1.0.0'
     implementation "org.videolan.android:libvlc-all:${vlcVersion}"
 }

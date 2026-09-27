@@ -6,22 +6,22 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump to apply before publishing"
+        description: 'Version bump to apply before publishing'
         required: true
         default: patch
         type: choice
         options: [patch, minor, major, prepatch, preminor, premajor, prerelease]
       preid:
-        description: "Prerelease identifier for the pre* bumps"
+        description: 'Prerelease identifier for the pre* bumps'
         required: false
         default: beta
         type: string
       dist_tag:
-        description: "npm dist-tag to publish under"
+        description: 'npm dist-tag to publish under'
         required: true
         default: latest
         type: choice
