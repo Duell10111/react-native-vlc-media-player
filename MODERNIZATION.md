@@ -142,16 +142,27 @@ Die Reihenfolge ist wesentlich: Ohne Phase 0 und 1 migriert man Phase 2 blind.
 
 Ziel: Änderungen überhaupt überprüfbar machen.
 
-- [ ] Publish-Pipeline entschärfen: Release über Tag oder `workflow_dispatch`
+- [x] Publish-Pipeline entschärfen: Release über Tag oder `workflow_dispatch`
       statt Auto-Patch-on-Push, mit vorgeschaltetem Build-/Lint-Job.
-- [ ] `files`-Whitelist in `package.json`.
-- [ ] `peerDependencies` für `react` und `react-native` ergänzen.
-- [ ] Podspec-Version aus `package.json` lesen
+      → `ci.yml` (auch als `workflow_call` wiederverwendbar) + `release.yml`;
+      `npmpublish.yml` und `npmpublish-beta.yml` entfallen.
+- [x] `files`-Whitelist in `package.json`. → Tarball von 44 auf 29 Dateien.
+- [x] `peerDependencies` für `react` und `react-native` ergänzen.
+      → `react >=18.2.0`, `react-native >=0.74.0` (Begründung: Phase 1).
+- [x] Podspec-Version aus `package.json` lesen
       (`JSON.parse(File.read("package.json"))`).
-- [ ] VLC-Version an *einer* Stelle definieren (Podspec, Expo-Plugin, Gradle).
-- [ ] `.idea/` und `ios/**/xcuserdata` aus dem Repo entfernen, `.gitignore`
-      ergänzen.
-- [ ] `onRecordingCreated`-Guard und `Bubbling`/`Direct`-Inkonsistenz fixen.
+- [x] VLC-Version an *einer* Stelle definieren (Podspec, Expo-Plugin, Gradle).
+      → Feld `vlc: { ios, android }` in `package.json`; Podspec, Expo-Plugin und
+      `android/build.gradle` (via `JsonSlurper`) lesen es. iOS ist damit einheitlich
+      auf `3.5.1` — der Expo-Plugin-Pin `3.3.10` hat vorher mit dem Podspec
+      kollidiert.
+- [x] `.idea/` und `ios/**/xcuserdata` aus dem Repo entfernen, `.gitignore`
+      ergänzen. → zusätzlich `android/react-native-yz-vlcplayer.iml`.
+- [x] `onRecordingCreated`-Guard und `Bubbling`/`Direct`-Inkonsistenz fixen.
+      → `RCTVLCPlayer.h` auf `RCTDirectEventBlock`, passend zum Manager.
+- [x] *Zusätzlich:* `react-native-slider` aus `dependencies` entfernt. Der Import
+      in `ControlBtn.js` ist auskommentiert — das Paket wurde von jedem Konsumenten
+      mitgezogen, ohne je geladen zu werden.
 
 ### Phase 1 — Repo-Struktur, TypeScript, Test-Matrix
 

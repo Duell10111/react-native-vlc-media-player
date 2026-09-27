@@ -3,6 +3,25 @@
   "version": "1.0.103",
   "description": "React native media player for video streaming and playing. Supports RTSP,RTMP and other protocols supported by VLC player",
   "main": "index.js",
+  "typings": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "VLCPlayer.js",
+    "app.plugin.js",
+    "react-native-vlc-media-player.podspec",
+    "playerView",
+    "expo",
+    "android/src",
+    "android/build.gradle",
+    "android/gradle.properties",
+    "android/proguard-rules.pro",
+    "ios/RCTVLCPlayer",
+    "README.md",
+    "LICENSE",
+    "!**/__tests__",
+    "!**/.*"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -18,9 +37,16 @@
     "video"
   ],
   "author": "rmilinda@gmail.com",
+  "vlc": {
+    "ios": "3.5.1",
+    "android": "3.6.3"
+  },
   "dependencies": {
-    "react-native-slider": "^0.11.0",
     "react-native-vector-icons": "^9.2.0"
+  },
+  "peerDependencies": {
+    "react": ">=18.2.0",
+    "react-native": ">=0.74.0"
   },
   "repository": {
     "type": "git",
@@ -34,6 +60,5 @@
   "devDependencies": {
     "@expo/config-plugins": "^7.2.2",
     "@types/react": "~18.2.14"
-  },
-  "typings": "index.d.ts"
+  }
 }

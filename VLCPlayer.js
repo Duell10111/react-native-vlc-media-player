@@ -157,7 +157,9 @@ export default class VLCPlayer extends Component {
 
     if (!event.nativeEvent.isRecording && event.nativeEvent.recordPath) {
       this.lastRecording = event.nativeEvent.recordPath;
-      this.props.onRecordingCreated(this.lastRecording);
+      if (this.props.onRecordingCreated) {
+        this.props.onRecordingCreated(this.lastRecording);
+      }
     }
   }
 

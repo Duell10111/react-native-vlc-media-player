@@ -9,18 +9,18 @@
 
 @interface RCTVLCPlayer : UIView <VLCCustomDialogRendererProtocol>
 
-@property (nonatomic, copy) RCTBubblingEventBlock onVideoProgress;
-@property (nonatomic, copy) RCTBubblingEventBlock onVideoPaused;
-@property (nonatomic, copy) RCTBubblingEventBlock onVideoStopped;
-@property (nonatomic, copy) RCTBubblingEventBlock onVideoBuffering;
-@property (nonatomic, copy) RCTBubblingEventBlock onVideoPlaying;
-@property (nonatomic, copy) RCTBubblingEventBlock onVideoEnded;
-@property (nonatomic, copy) RCTBubblingEventBlock onVideoError;
-@property (nonatomic, copy) RCTBubblingEventBlock onVideoOpen;
-@property (nonatomic, copy) RCTBubblingEventBlock onVideoLoadStart;
-@property (nonatomic, copy) RCTBubblingEventBlock onVideoLoad;
-@property (nonatomic, copy) RCTBubblingEventBlock onRecordingState;
-@property (nonatomic, copy) RCTBubblingEventBlock onSnapshot;
+@property (nonatomic, copy) RCTDirectEventBlock onVideoProgress;
+@property (nonatomic, copy) RCTDirectEventBlock onVideoPaused;
+@property (nonatomic, copy) RCTDirectEventBlock onVideoStopped;
+@property (nonatomic, copy) RCTDirectEventBlock onVideoBuffering;
+@property (nonatomic, copy) RCTDirectEventBlock onVideoPlaying;
+@property (nonatomic, copy) RCTDirectEventBlock onVideoEnded;
+@property (nonatomic, copy) RCTDirectEventBlock onVideoError;
+@property (nonatomic, copy) RCTDirectEventBlock onVideoOpen;
+@property (nonatomic, copy) RCTDirectEventBlock onVideoLoadStart;
+@property (nonatomic, copy) RCTDirectEventBlock onVideoLoad;
+@property (nonatomic, copy) RCTDirectEventBlock onRecordingState;
+@property (nonatomic, copy) RCTDirectEventBlock onSnapshot;
 
 @property (nonatomic, strong) VLCDialogProvider *dialogProvider;
 @property (nonatomic, assign) BOOL acceptInvalidCertificates;

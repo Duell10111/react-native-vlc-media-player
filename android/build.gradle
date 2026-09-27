@@ -1,4 +1,13 @@
+import groovy.json.JsonSlurper
+
 apply plugin: 'com.android.library'
+
+// Single source of truth for the VLC version: the "vlc" field in package.json.
+// Keep in sync with react-native-vlc-media-player.podspec and expo/ios/withMobileVlcKit.js,
+// which read the same field.
+def packageJson = new JsonSlurper().parseText(file("../package.json").text)
+def vlcVersion = packageJson.vlc.android
+
 android {
     namespace 'com.yuanzhou.vlc'
     compileSdkVersion 35
@@ -44,5 +53,5 @@ dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation "com.facebook.react:react-native:+"
     implementation 'androidx.legacy:legacy-support-v4:1.0.0'
-    implementation 'org.videolan.android:libvlc-all:3.6.3'
+    implementation "org.videolan.android:libvlc-all:${vlcVersion}"
 }
