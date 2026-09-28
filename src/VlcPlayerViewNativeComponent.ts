@@ -135,7 +135,7 @@ export interface NativeProps extends ViewProps {
 
   /** iOS only; Android reads autoplay from `source.autoplay`. */
   autoplay?: boolean;
-  /** iOS only, and currently unread by RCTVLCPlayer.m. */
+  /** iOS only. Saves a snapshot to this path when set. */
   snapshotPath?: string;
 
   /** Android only. */

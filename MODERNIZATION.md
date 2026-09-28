@@ -412,26 +412,154 @@ zu klären in Phase 2c/2d, wenn der Emitter auf `UIManagerHelper` umgestellt wir
 
 ### Phase 2b — iOS auf Swift
 
-- [ ] **Core:** `ios/VlcPlayerView.swift` — `UIView`-Subklasse mit der Logik aus
+- [x] **Core:** `ios/VlcPlayerView.swift` — `UIView`-Subklasse mit der Logik aus
       den 544 Zeilen `RCTVLCPlayer.m`. VLCKit-Import via `import MobileVLCKit`
       bzw. `import TVVLCKit` unter `#if os(tvOS)`.
-- [ ] Events als `@objc`-kompatible Closures am Core
+      → 539 Zeilen Swift. `ios/RCTVLCPlayer/` und das toter Ballast gewordene
+      `ios/RCTVLCPlayer.xcodeproj` sind weg.
+- [x] Events als `@objc`-kompatible Closures am Core
       (`var onProgress: ((NSDictionary) -> Void)?`) — keine React-Typen im Core.
-- [ ] **Adapter New Arch:** `ios/VlcPlayerComponentView.mm`, Subklasse von
+      → Die Closures heißen wie die Events in der Spec, damit der Legacy-Adapter
+      sie ohne eine Zeile Übersetzungscode binden kann.
+- [x] **Adapter New Arch:** `ios/VlcPlayerComponentView.mm`, Subklasse von
       `RCTViewComponentView`. Muss ObjC++ sein (C++-Props-Typen aus Codegen),
       hält die Swift-View und übersetzt `updateProps:` und `handleCommand:args:`.
-- [ ] **Adapter Old Arch:** `ios/RCTVLCPlayerManager.m` bleibt, aber reduziert
+      → Commands kommen nicht über `handleCommand:args:`, sondern über das
+      generierte `RCTVlcPlayerViewViewProtocol`, das der Adapter implementiert.
+- [x] **Adapter Old Arch:** `ios/RCTVLCPlayerManager.m` bleibt, aber reduziert
       auf `RCTViewManager` + `RCT_EXPORT_VIEW_PROPERTY`; die vier
       `RCT_EXPORT_METHOD`/`uiManager`-Blöcke entfallen (Commands laufen jetzt
       über die Spec). Ganze Datei in `#ifndef RCT_NEW_ARCH_ENABLED`.
-- [ ] **Podspec:** `install_modules_dependencies(s)` (definiert
+      → **Dieser Punkt war falsch.** Die `RCT_EXPORT_METHOD`-Blöcke *müssen*
+      bleiben; siehe unten. Die Datei heißt jetzt `.mm`, was der Guard erzwingt.
+- [x] **Podspec:** `install_modules_dependencies(s)` (definiert
       `RCT_NEW_ARCH_ENABLED`), `s.swift_version`,
       `s.ios.deployment_target = "15.1"`, `static_framework` beibehalten.
-- [ ] **Papercut einplanen:** die ObjC++-Adapter brauchen den generierten
+      → `deployment_target` bleibt bei **13.4**: Swift braucht 15.1 nicht, und
+      13.4 ist das Minimum von RN 0.74, also der deklarierten Untergrenze. Auf
+      15.1 zu gehen wäre ein Breaking Change ohne Gegenwert.
+- [x] **Papercut einplanen:** die ObjC++-Adapter brauchen den generierten
       Swift-Header (`#import "react_native_vlc_media_player-Swift.h"`, Name =
       Modulname mit Unterstrichen). Das ist die häufigste Fehlerquelle beim
       ObjC↔Swift-Mix in Pods — früh gegen die Beispiel-App verifizieren, auch
       für tvOS.
+      → Der Papercut ist eingetreten, aber anders als erwartet, und ist jetzt
+      strukturell ausgeschlossen. Siehe „Der Swift-Header".
+
+#### Warum die Commands im Legacy-Adapter bleiben mussten
+
+Der Plan ging davon aus, dass die `RCT_EXPORT_METHOD`-Blöcke entfallen, weil
+„Commands jetzt über die Spec laufen". Auf der Old Architecture laufen sie aber
+*durch* den `RCTUIManager`: `dispatchViewManagerCommand` löst den Command-Namen
+gegen `moduleData.methodsByName` des ViewManagers auf und stellt den React-Tag
+voran. Ein `RCTViewManager` hat keinen anderen Hook für Commands. Sie bleiben
+also — gebündelt hinter einem `withView:perform:`-Helper, damit Phase 3 sie in
+einem Stück löscht.
+
+#### Der Swift-Header
+
+Der generierte `react_native_vlc_media_player-Swift.h` deklariert die öffentliche
+Swift-Klasse **mit ihren Protokoll-Konformanzen**. Weil `VlcPlayerView` ursprünglich
+selbst `VLCMediaPlayerDelegate` und `VLCCustomDialogRendererProtocol` erfüllte,
+stand im Header `@interface VlcPlayerView (…) <VLCMediaPlayerDelegate>` — und jede
+ObjC++-Datei, die den Header importiert, brach mit
+`cannot find protocol declaration for 'VLCMediaPlayerDelegate'`.
+
+Sichtbarkeit zu reduzieren geht nicht: Swift verlangt `public` für Methoden, die
+eine Anforderung eines öffentlichen Protokolls erfüllen.
+
+Die naheliegende Lösung wäre, in jedem Adapter vor dem Swift-Header VLCKit zu
+importieren — inklusive `#if TARGET_OS_TV`-Zweig, weil das Framework auf iOS
+`MobileVLCKit` und auf tvOS `TVVLCKit` heißt. Stattdessen tragen jetzt ein
+`fileprivate` **`VlcPlayerDelegateProxy`** die beiden Konformanzen. Ergebnis: im
+generierten Header kommt kein einziger VLC-Typ mehr vor, und die Adapter brauchen
+VLCKit überhaupt nicht — auf keiner Plattform.
+
+#### Ohne `codegenConfig.ios.components` gibt es keine Fabric-Komponente
+
+Der stillste Fehler dieser Phase. React Native erzeugt
+`RCTThirdPartyComponentsProvider.mm`, das Komponentennamen auf ObjC-Klassen
+abbildet. Der Generator überspringt jede Library, deren `codegenConfig` **kein**
+`ios`-Feld hat (`if (!iosConfig) continue;`) — auch den deprecated Fallback, der
+`.mm`-Dateien nach `Class<RCTComponentViewProtocol> …Cls(` durchsucht. Ergebnis
+war ein leeres Mapping: der Build lief durch, aber zur Laufzeit hätte Fabric die
+Komponente nie gefunden. Nötig ist:
+
+```json
+"codegenConfig": {
+  "ios": { "components": { "VlcPlayerView": { "className": "VlcPlayerComponentView" } } }
+}
+```
+
+Die `VlcPlayerViewCls()`-Funktion im Adapter bleibt trotzdem: RN-Versionen vor
+0.80 kennen das `ios.components`-Feld nicht und finden die Klasse nur über den
+Crawl.
+
+#### `target` bleibt draußen
+
+Der ObjC-Core schrieb `@"target": self.reactTag` in jeden Event-Payload und
+brauchte dafür `UIView+React`. Das ist überflüssig: `RCTComponentEvent` setzt
+`body[@"target"] = viewTag` selbst. Der Swift-Core liefert deshalb Payloads ohne
+`target`; auf der Old Arch ergänzt React Native es, auf Fabric der Adapter aus
+`self.tag`. Damit ist der Core wirklich React-frei.
+
+#### Der iOS-Old-Arch-Build ist lokal nicht mehr blockiert
+
+`RCT_USE_RN_DEP=1` beim `pod install` ersetzt den Quellcode-Pod `fmt` durch die
+vorgebauten `ReactNativeDependencies` — und damit verschwindet der
+`consteval`-Fehler gegen den clang aus Xcode 26+. Alle vier Konfigurationen sind
+damit erstmals lokal verifizierbar. Die CI bleibt bewusst ohne dieses Flag und
+mit dem Xcode-16.4-Pin, weil sie das bauen soll, was ein Konsument ohne
+Sonderflags bekommt.
+
+#### Nebenbefunde aus der Konversion
+
+Die Swift-Fassung räumt vier Dinge mit auf, die der ObjC-Compiler angemeckert hat
+und die der Rewrite nicht wiederholen konnte:
+
+- `_subtitleUri` war als `NSString *` deklariert, bekam aber eine `NSURL *`
+  zugewiesen und wurde als `NSURL *` weiterverwendet.
+- `RCTVLCPlayer` deklarierte `VLCMediaPlayerDelegate` nie, wurde aber als Delegate
+  gesetzt.
+- `setVideoAspectRatio:` verwarf den `const`-Qualifier des C-Strings.
+- Die Event-Blöcke wurden **ungeprüft** aufgerufen (`self.onVideoOpen(…)`). Ein
+  fehlendes Prop wäre ein Crash gewesen; nur weil der JS-Wrapper immer alle Events
+  setzt, fiel das nie auf. Optionale Closures in Swift können das nicht.
+
+Und `RCT_CUSTOM_VIEW_PROPERTY(muted, …)` ist zu einem normalen
+`RCT_EXPORT_VIEW_PROPERTY` geworden, weil der Swift-Core `muted` als Property
+anbietet.
+
+#### Mitkorrigiert
+
+`_release` entfernte alle `NSNotificationCenter`-Observer und wurde auch aus
+`setSource:` aufgerufen. Nach dem ersten Quellwechsel war das Vordergrund-/
+Hintergrund-Handling damit tot. `releasePlayer()` baut jetzt nur den Player ab;
+die Observer gehen erst im `deinit`. Das musste sein: Fabric recycelt Views über
+denselben Pfad, wodurch der Fehler bei jeder Wiederverwendung zugeschlagen hätte.
+Die sichtbare Folge ist, dass Wiedergabe beim Zurückkehren in den Vordergrund
+tatsächlich wieder aufgenommen wird — also das, wofür der Observer gedacht war.
+
+Zwei Dinge, die beim Review des Adapters auffielen und keine Portierungsfehler
+sind, sondern Fallen des Ziel-Layouts:
+
+- Der Event-Emitter-Getter liefert `std::shared_ptr`. Eine Nachricht an `nil` ist
+  nur für Skalare und kleine Structs definiert, nicht dafür — jeder Block prüft
+  seinen `weakSelf` deshalb *vor* dem Zugriff.
+- Swift erbt `init()` nicht, sobald eine Subklasse einen eigenen designated
+  initializer deklariert. Der Legacy-Adapter ruft darum explizit
+  `initWithFrame:CGRectZero` statt `new`.
+
+#### Verhaltenserhaltend übernommen, obwohl fragwürdig
+
+- `applicationWillResignActive` ruft `play()`, nicht `pause()`.
+- Der `VLCConsoleLogger` läuft unverändert auf `kVLCLogLevelDebug`.
+
+#### tvOS
+
+Nicht verifiziert. Der Code ist `#if os(tvOS)`-korrekt und die Adapter brauchen
+dank des Proxys keinen plattformabhängigen Import mehr, aber ein tvOS-Build
+braucht `react-native-tvos` und steht nicht in der Matrix.
 
 ### Phase 2c — Android auf Kotlin
 
@@ -477,7 +605,7 @@ die Beispiel-App aus Phase 1 verifizierbar.
 Wenn die Zeit reif ist, ist das ein reiner Löschvorgang. Diese Liste ist der
 eigentliche Zweck von Abschnitt 3 — sie muss bei jeder Änderung gültig bleiben:
 
-- [ ] `ios/RCTVLCPlayerManager.m` + `.h` löschen.
+- [ ] `ios/RCTVLCPlayerManager.mm` + `.h` löschen.
 - [ ] `#ifdef RCT_NEW_ARCH_ENABLED`-Guard in `VlcPlayerComponentView.mm`
       entfernen (Datei bleibt).
 - [ ] `android/src/oldarch/` löschen.

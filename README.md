@@ -89,9 +89,13 @@ Reference: https://code.videolan.org/videolan/vlc-android/-/issues/2252
 ## iOS
 
 1. cd to ios
-2. run `pod init` (if only Podfile has not been generated in ios folder)
-3. add `pod 'MobileVLCKit', '3.3.10'` to pod file **(No need if you are running RN 0.61 and up)**
-4. run `pod install` (you have to delete the app on the simulator/device and run `react-native run-ios` again)
+2. run `pod install` (you have to delete the app on the simulator/device and run it again)
+
+The pod pulls `MobileVLCKit` (or `TVVLCKit` on tvOS) in itself — the version lives
+in the `vlc` field of this package's `package.json`, so nothing needs pinning in
+your Podfile.
+
+Minimum deployment target is **iOS 13.4**.
 
 ### Important
 
@@ -288,6 +292,16 @@ without rebuilding `lib/`.
 ```sh
 cd example
 EXAMPLE_ARCH=old npx expo prebuild --platform android --clean
+```
+
+On iOS, the Legacy Architecture builds React Native from source, and `Pods/fmt`
+does not compile with the clang in Xcode 26 and newer. Installing the prebuilt
+dependencies instead works around it:
+
+```sh
+cd example
+EXAMPLE_ARCH=old npx expo prebuild --platform ios --clean
+cd ios && RCT_NEW_ARCH_ENABLED=0 RCT_USE_RN_DEP=1 pod install
 ```
 
 Both architectures are still supported, so please check a change against both —

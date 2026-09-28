@@ -80,9 +80,21 @@ function main() {
 }
 
 /** Names the native view managers declare, scraped from the sources. */
+const isEventBlock = (type) =>
+  type === 'RCTDirectEventBlock' || type === 'RCTBubblingEventBlock';
+
 function nativeDeclarations() {
   const root = path.join(__dirname, '..');
-  const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
+  const read = (relative) => {
+    const file = path.join(root, relative);
+    if (!fs.existsSync(file)) {
+      throw new Error(
+        `${relative} is gone. The scraper in scripts/check-codegen-spec.js has to ` +
+          'follow the native layout; update it rather than deleting the check.'
+      );
+    }
+    return fs.readFileSync(file, 'utf8');
+  };
 
   const androidManager = read(
     'android/src/main/java/com/yuanzhou/vlc/vlcplayer/ReactVlcPlayerViewManager.java'
@@ -90,8 +102,8 @@ function nativeDeclarations() {
   const androidEvents = read(
     'android/src/main/java/com/yuanzhou/vlc/vlcplayer/VideoEventEmitter.java'
   );
-  const iosManager = read('ios/RCTVLCPlayer/RCTVLCPlayerManager.m');
-  const iosView = read('ios/RCTVLCPlayer/RCTVLCPlayer.h');
+  const iosManager = read('ios/RCTVLCPlayerManager.mm');
+  const iosCore = read('ios/VlcPlayerView.swift');
 
   const all = (source, re) =>
     [...source.matchAll(re)].map((m) => m[1]).filter(Boolean);
@@ -121,21 +133,41 @@ function nativeDeclarations() {
         .filter(Boolean)
     : [];
 
+  const iosViewProperties = [
+    ...iosManager.matchAll(
+      /RCT_(?:EXPORT|CUSTOM)_VIEW_PROPERTY\(\s*(\w+)\s*,\s*(\w+)/g
+    ),
+  ].map((m) => [m[1], m[2]]);
+
   return {
+    iosCore,
     android: {
       props: androidProps,
       events: androidEventNames,
     },
     ios: {
-      // The iOS manager exports its events as view properties too, so anything
-      // named onSomething belongs in the event bucket.
-      props: all(
-        iosManager,
-        /RCT_(?:EXPORT|CUSTOM)_VIEW_PROPERTY\(\s*(\w+)/g
-      ).filter((name) => !/^on[A-Z]/.test(name)),
-      events: all(iosView, /RCTDirectEventBlock (\w+)/g),
+      // The legacy adapter exports events as view properties too, so they are told
+      // apart by their declared type rather than by name.
+      props: iosViewProperties
+        .filter(([, type]) => !isEventBlock(type))
+        .map(([name]) => name),
+      events: iosViewProperties
+        .filter(([, type]) => isEventBlock(type))
+        .map(([name]) => name),
     },
   };
+}
+
+/**
+ * Every event the legacy adapter exports has to exist as a closure on the Swift
+ * core, otherwise the adapter binds a block onto nothing and the event is lost
+ * without a word.
+ */
+function crossCheckSwiftCore(iosEvents, iosCore) {
+  const declared = new Set(
+    [...iosCore.matchAll(/@objc public var (on\w+):/g)].map((m) => m[1])
+  );
+  return iosEvents.filter((name) => !declared.has(name));
 }
 
 /**
@@ -153,7 +185,18 @@ function crossCheckNative(schema) {
   const native = nativeDeclarations();
   const problems = [];
 
+  const missingOnCore = crossCheckSwiftCore(native.ios.events, native.iosCore);
+  if (missingOnCore.length > 0) {
+    problems.push(
+      'the legacy iOS adapter exports events the Swift core does not declare: ' +
+        missingOnCore.join(', ')
+    );
+  }
+
   for (const [platform, declared] of Object.entries(native)) {
+    if (platform === 'iosCore') {
+      continue;
+    }
     for (const [kind, names] of Object.entries(declared)) {
       if (names.length === 0) {
         problems.push(

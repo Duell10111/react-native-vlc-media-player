@@ -15,7 +15,7 @@
     "android/src",
     "android/build.gradle",
     "android/proguard-rules.pro",
-    "ios/RCTVLCPlayer",
+    "ios",
     "README.md",
     "LICENSE",
     "!**/__tests__",
@@ -98,5 +98,20 @@
         }
       ]
     ]
+  },
+  "codegenConfig": {
+    "name": "ReactNativeVlcMediaPlayerSpec",
+    "type": "components",
+    "jsSrcsDir": "src",
+    "android": {
+      "javaPackageName": "com.yuanzhou.vlc.vlcplayer"
+    },
+    "ios": {
+      "components": {
+        "VlcPlayerView": {
+          "className": "VlcPlayerComponentView"
+        }
+      }
+    }
   }
 }
