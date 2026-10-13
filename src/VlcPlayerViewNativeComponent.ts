@@ -117,6 +117,17 @@ export type NativeSource = Readonly<{
   initOptions?: ReadonlyArray<string>;
   mainVer?: Int32;
   patchVer?: Int32;
+  /** Android only. Options added to the media, as with `initOptions`. */
+  mediaOptions?: ReadonlyArray<string>;
+  /**
+   * Android only. `>= 1` enables hardware decoding, `0` disables it. Only applied
+   * when `hwDecoderForced` is set too. The `-1` default means "leave VLC's own
+   * default alone" — without it an omitted field would arrive on the New
+   * Architecture as `0` and switch hardware decoding off.
+   */
+  hwDecoderEnabled?: WithDefault<Int32, -1>;
+  /** Android only. `>= 1` forces hardware decoding. See `hwDecoderEnabled`. */
+  hwDecoderForced?: WithDefault<Int32, -1>;
 }>;
 
 export interface NativeProps extends ViewProps {
@@ -219,9 +230,11 @@ export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
   ],
 });
 
-// `VlcPlayerView` is the Fabric name the Phase 2b/2c adapters will register.
-// `paperComponentName` keeps the legacy lookup on the existing view manager
-// name, so the Old Architecture keeps resolving the current managers unchanged.
-export default codegenNativeComponent<NativeProps>('VlcPlayerView', {
-  paperComponentName: 'RCTVLCPlayer',
-}) as ComponentType;
+// One native name for both architectures. The static view config that codegen
+// generates from this call carries a single name, and with `paperComponentName`
+// set that name is the paper one on Fabric too — so Fabric looked for
+// `RCTVLCPlayer` and never found the `VlcPlayerView` component the native
+// adapters register. The legacy view managers are named `VlcPlayerView` instead.
+export default codegenNativeComponent<NativeProps>(
+  'VlcPlayerView'
+) as ComponentType;

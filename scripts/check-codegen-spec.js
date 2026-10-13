@@ -61,7 +61,15 @@ function main() {
     for (const [name, component] of Object.entries(module.components ?? {})) {
       components++;
       console.log(`${name}  (library ${libraryName})`);
-      console.log(`  paperComponentName : ${component.paperComponentName}`);
+      if (component.paperComponentName) {
+        // The static view config then carries the paper name on Fabric too, and
+        // Fabric no longer finds the component. See MODERNIZATION.md, Phase 2d.
+        console.error(
+          `  paperComponentName is set (${component.paperComponentName}); ` +
+            'both architectures must use the component name'
+        );
+        process.exit(1);
+      }
       console.log(`  props    (${component.props.length})`);
       console.log(`    ${component.props.map((p) => p.name).join(', ')}`);
       console.log(`  events   (${component.events.length})`);

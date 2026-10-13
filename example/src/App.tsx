@@ -21,8 +21,9 @@ import {
   type VideoInfo,
 } from 'react-native-vlc-media-player';
 
+// The Google sample bucket this used to point at answers with HTTP 403 now.
 const DEFAULT_URI =
-  'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+  'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4';
 
 const ASPECT_RATIOS: PlayerAspectRatio[] = ['16:9', '4:3', '1:1', '9:16'];
 

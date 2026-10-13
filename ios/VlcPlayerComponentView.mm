@@ -51,7 +51,8 @@ bool SourceEqual(const VlcPlayerViewSourceStruct &lhs, const VlcPlayerViewSource
     return lhs.uri == rhs.uri && lhs.type == rhs.type && lhs.isNetwork == rhs.isNetwork &&
         lhs.autoplay == rhs.autoplay && lhs.initType == rhs.initType &&
         lhs.initOptions == rhs.initOptions && lhs.mainVer == rhs.mainVer &&
-        lhs.patchVer == rhs.patchVer;
+        lhs.patchVer == rhs.patchVer && lhs.mediaOptions == rhs.mediaOptions &&
+        lhs.hwDecoderEnabled == rhs.hwDecoderEnabled && lhs.hwDecoderForced == rhs.hwDecoderForced;
 }
 
 NSDictionary *SourceToDictionary(const VlcPlayerViewSourceStruct &source)

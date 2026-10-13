@@ -15,6 +15,11 @@ apply plugin: 'com.facebook.react'
 def packageJson = new JsonSlurper().parseText(file("../package.json").text)
 def vlcVersion = packageJson.vlc.android
 
+// The app's gradle.properties decides; every RN template sets it.
+def isNewArchitectureEnabled() {
+    return project.hasProperty("newArchEnabled") && project.newArchEnabled == "true"
+}
+
 android {
     namespace 'com.yuanzhou.vlc'
     compileSdk 35
@@ -30,6 +35,15 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // The view manager's base class differs per architecture: src/newarch wires
+    // the codegen delegate, src/oldarch resolves props and commands the legacy
+    // way. Phase 3 deletes src/oldarch and this block.
+    sourceSets {
+        main {
+            java.srcDirs += [isNewArchitectureEnabled() ? "src/newarch" : "src/oldarch"]
+        }
     }
 
     buildTypes {
@@ -55,6 +69,5 @@ repositories {
 
 dependencies {
     implementation "com.facebook.react:react-android"
-    implementation 'androidx.legacy:legacy-support-v4:1.0.0'
     implementation "org.videolan.android:libvlc-all:${vlcVersion}"
 }

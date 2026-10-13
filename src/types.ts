@@ -82,6 +82,19 @@ export interface VLCPlayerSource {
    * Patch version passed through to the native player
    */
   patchVer?: number;
+  /**
+   * Android only. VLC options applied to this media, e.g. `[":network-caching=300"]`
+   */
+  mediaOptions?: string[];
+  /**
+   * Android only. `1` enables hardware decoding, `0` disables it. Takes effect
+   * only together with `hwDecoderForced`; omit both to keep VLC's default.
+   */
+  hwDecoderEnabled?: 0 | 1;
+  /**
+   * Android only. `1` forces hardware decoding. See `hwDecoderEnabled`.
+   */
+  hwDecoderForced?: 0 | 1;
 }
 
 export type VLCPlayerCallbackProps = {

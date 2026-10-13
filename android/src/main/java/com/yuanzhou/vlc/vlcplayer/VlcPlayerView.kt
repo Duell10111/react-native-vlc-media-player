@@ -34,14 +34,14 @@ import kotlin.math.roundToInt
  * props and commands to it.
  */
 @SuppressLint("ViewConstructor")
-class VlcPlayerView(context: ThemedReactContext) :
-    TextureView(context),
+class VlcPlayerView(private val reactContext: ThemedReactContext) :
+    TextureView(reactContext),
     LifecycleEventListener,
     TextureView.SurfaceTextureListener,
     AudioManager.OnAudioFocusChangeListener {
 
-    private val eventEmitter = VideoEventEmitter(context)
-    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val eventEmitter = VideoEventEmitter(this)
+    private val audioManager = reactContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val progressUpdateHandler = Handler(Looper.getMainLooper())
 
     private var libvlc: LibVLC? = null
@@ -209,12 +209,7 @@ class VlcPlayerView(context: ThemedReactContext) :
     init {
         surfaceTextureListener = this
         addOnLayoutChangeListener(layoutChangeListener)
-        context.addLifecycleEventListener(this)
-    }
-
-    override fun setId(id: Int) {
-        super.setId(id)
-        eventEmitter.viewId = id
+        reactContext.addLifecycleEventListener(this)
     }
 
     override fun onDetachedFromWindow() {
@@ -321,7 +316,11 @@ class VlcPlayerView(context: ThemedReactContext) :
 
             val media = if (isNetwork) Media(lib, Uri.parse(uriString)) else Media(lib, uriString)
             media.setEventListener(mediaListener)
-            if (hwDecoderEnabled != null && hwDecoderForced != null) {
+            // -1 is the spec's "not set" default, which Fabric sends for an
+            // omitted field; the Legacy Architecture omits the key instead.
+            if (hwDecoderEnabled != null && hwDecoderForced != null &&
+                hwDecoderEnabled >= 0 && hwDecoderForced >= 0
+            ) {
                 media.setHWDecoderEnabled(hwDecoderEnabled >= 1, hwDecoderForced >= 1)
             }
             for (option in stringOptions(mediaOptions)) {
@@ -384,10 +383,14 @@ class VlcPlayerView(context: ThemedReactContext) :
                 val player = mediaPlayer
                 if (player != null && !paused) {
                     val map = Arguments.createMap()
+                    val currentTime = player.time
+                    val duration = player.length
                     map.putBoolean("isPlaying", player.isPlaying)
                     map.putDouble("position", player.position.toDouble())
-                    map.putDouble("currentTime", player.time.toDouble())
-                    map.putDouble("duration", player.length.toDouble())
+                    map.putDouble("currentTime", currentTime.toDouble())
+                    map.putDouble("duration", duration.toDouble())
+                    // Declared by the spec and sent by iOS; Android never had it.
+                    map.putDouble("remainingTime", (duration - currentTime).coerceAtLeast(0).toDouble())
                     updateVideoInfo(player)
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_PROGRESS)
                 }
@@ -429,20 +432,17 @@ class VlcPlayerView(context: ThemedReactContext) :
             return
         }
 
+        // Every field is always present, as the spec declares and iOS does. Android
+        // used to leave out whatever was unknown yet, which made `videoSize`
+        // undefined on the first onVideoLoad of most streams.
         val info = Arguments.createMap()
         info.putDouble("duration", duration.toDouble())
-        if (audioTracks != null) {
-            info.putArray("audioTracks", trackArray(audioTracks))
-        }
-        if (textTracks != null) {
-            info.putArray("textTracks", trackArray(textTracks))
-        }
-        if (videoTrack != null) {
-            val videoSize = Arguments.createMap()
-            videoSize.putInt("width", videoTrack.width)
-            videoSize.putInt("height", videoTrack.height)
-            info.putMap("videoSize", videoSize)
-        }
+        info.putArray("audioTracks", trackArray(audioTracks ?: emptyArray()))
+        info.putArray("textTracks", trackArray(textTracks ?: emptyArray()))
+        val videoSize = Arguments.createMap()
+        videoSize.putInt("width", videoTrack?.width ?: 0)
+        videoSize.putInt("height", videoTrack?.height ?: 0)
+        info.putMap("videoSize", videoSize)
         eventEmitter.sendEvent(info, VideoEventEmitter.EVENT_ON_LOAD)
         videoInfoHash = hash
     }
@@ -627,6 +627,17 @@ class VlcPlayerView(context: ThemedReactContext) :
         stopPlayback()
     }
 
+    /**
+     * Final teardown when React drops the view. Unlike [cleanUpResources], which
+     * the `clear` prop also triggers on a view that lives on, this unregisters
+     * the lifecycle listener — otherwise the context keeps every dropped player
+     * view alive.
+     */
+    fun dispose() {
+        cleanUpResources()
+        reactContext.removeLifecycleEventListener(this)
+    }
+
     private companion object {
         const val TAG = "VlcPlayerView"
 
@@ -642,14 +653,14 @@ class VlcPlayerView(context: ThemedReactContext) :
         }
 
         /**
-         * Faithful to the Java version, including its off-by-one: the last option
-         * is dropped. Fixed separately in Phase 2d so the conversion stays a pure
-         * conversion.
+         * The string entries of an options array. The Java version iterated to
+         * `size() - 1` and dropped the last option — on Android, the `--repeat`
+         * the JS wrapper appends for `repeat` never reached VLC.
          */
         fun stringOptions(array: ReadableArray?): List<String> {
             if (array == null) return emptyList()
             val options = ArrayList<String>()
-            for (i in 0 until array.size() - 1) {
+            for (i in 0 until array.size()) {
                 if (array.getType(i) == ReadableType.String) {
                     array.getString(i)?.let { options.add(it) }
                 }

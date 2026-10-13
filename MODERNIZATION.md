@@ -705,16 +705,119 @@ Zwei Befunde dabei, beide älter als 2c:
 
 ### Phase 2d — Android: Adapter & Gradle
 
-- [ ] `VideoEventEmitter` auf `UIManagerHelper.getEventDispatcherForReactTag()`
+- [x] `VideoEventEmitter` auf `UIManagerHelper.getEventDispatcherForReactTag()`
       + eigene `Event`-Subklasse umstellen. Arch-agnostisch, kein Adapter.
-- [ ] `receiveCommand` auf die String-Signatur.
-- [ ] **Adapter:** `android/src/newarch/` und `android/src/oldarch/` mit je einer
+      → `canCoalesce()` ist `false`. Der Default ist `true`, und dann erreicht von
+      zwei gleichnamigen Events derselben View im selben Frame nur das neuere JS —
+      der alte `RCTEventEmitter`-Pfad hat nie etwas verworfen, und `onVideoEnd`
+      oder `onSnapshot` dürfen nicht verloren gehen.
+- [x] `receiveCommand` auf die String-Signatur.
+      → War seit 2a erledigt; lebt jetzt nur noch in der Old-Arch-Basisklasse,
+      weil auf der New Arch der generierte Delegate die Commands verteilt.
+- [x] **Adapter:** `android/src/newarch/` und `android/src/oldarch/` mit je einer
       `VlcPlayerViewManagerSpec.kt`-Basisklasse (~20 Zeilen); Auswahl über
       `sourceSets` anhand des `newArchEnabled`-Flags. Der echte
       `VlcPlayerViewManager` erbt davon und existiert nur einmal.
-- [ ] Gradle modernisieren: RN-Gradle-Plugin, `react-android` statt
+      → Die New-Arch-Basis sind 20 Zeilen. Die Old-Arch-Basis ist länger (~100),
+      weil sie das generierte Interface als abstrakte Methoden spiegelt, damit der
+      Manager gegen beide Basen unverändert kompiliert, und weil sie die Commands
+      per Namen auflöst. Phase 3 löscht sie als Ganzes.
+- [x] Gradle modernisieren: RN-Gradle-Plugin, `react-android` statt
       `react-native:+`, AGP/Wrapper aktuell, `legacy-support-v4` und das
       wirkungslose mvnrepository-Repo entfernen.
+      → Plugin und `react-android` waren seit Phase 1 da, das mvnrepository-Repo
+      schon weg. `legacy-support-v4` ist entfernt (nichts nutzte es). AGP setzt die
+      Library bewusst nicht: sie kommt aus der App. Der Wrapper unter
+      `android/gradle/` (Gradle 6.9) ist **gelöscht** statt aktualisiert — es gab
+      kein `gradlew` dazu, er wurde nicht veröffentlicht und war nur ein
+      veraltetes JAR im Repo. Gebaut wird die Library immer als Teil einer App.
+
+#### Ein Name für beide Architekturen
+
+Der Kern dieser Phase, und im Plan nicht vorgesehen. Codegen erzeugt aus
+`codegenNativeComponent` eine statische View-Config mit **einem** Namen. Mit
+`paperComponentName: 'RCTVLCPlayer'` ist das der Paper-Name — auch auf Fabric.
+Fabric suchte also nach `RCTVLCPlayer` und fand weder die generierte
+`VlcPlayerView`-Komponente noch den iOS-Adapter aus 2b; die View lief nur, weil
+der Interop-Layer für unbekannte Komponenten auf den alten ViewManager
+zurückfällt. (Nachgewiesen im Bundle der Beispiel-App: `nativeComponentName =
+'RCTVLCPlayer'`.)
+
+Statt die Fabric-Komponente umzubenennen (was jede generierte Klasse und den
+iOS-Adapter mitumbenannt hätte), heißen jetzt die Legacy-Manager `VlcPlayerView`:
+Android über `getName()`, iOS über `RCT_EXPORT_MODULE(VlcPlayerViewManager)` — React
+Native streicht das Suffix „Manager". `paperComponentName` ist aus der Spec
+entfernt.
+
+Für Konsumenten unsichtbar, solange sie die Komponente über den JS-Export
+benutzen. Wer `requireNativeComponent('RCTVLCPlayer')` direkt aufruft, bricht.
+
+#### Payloads halten jetzt, was die Typen versprechen
+
+Weil Android eine `WritableMap` dispatcht und nicht die typisierten C++-Emitter,
+ist auf Android jedes Payload so, wie die Map es enthält — die Spec ist dort nur
+ein Versprechen. Drei Stellen, an denen es gebrochen war:
+
+- **`onVideoLoad`** ließ `videoSize`, `audioTracks` und `textTracks` weg, solange
+  sie unbekannt waren. Die Beispiel-App stürzte beim ersten Lauf daran ab
+  (`Cannot read property 'width' of undefined`). Jetzt immer vorhanden:
+  `{ width: 0, height: 0 }` bzw. leere Arrays, wie iOS.
+- **`onVideoProgress`** hatte kein `remainingTime`. Jetzt `duration -
+  currentTime`, nicht negativ.
+- **`target`** fehlte in allen Android-Payloads. Der Emitter setzt es zentral.
+
+Bewusst offen gelassen, weil es eine API-Entscheidung ist und kein Transportfehler:
+Android schickt in mehreren Events mehr, als die Spec deklariert (`isPlaying`,
+`position`, `type`, `bufferRate`), und `onVideoPlaying` ohne `seekable`,
+`onVideoSeek` ohne `seekTime`. Das gehört in die Payload-Vereinheitlichung von
+Phase 4.
+
+#### Source-Felder, die auf Fabric nie angekommen wären
+
+Android liest aus `source` auch `mediaOptions`, `hwDecoderEnabled` und
+`hwDecoderForced`. Keines davon stand in der Spec — auf Fabric übersetzt Codegen
+`source` in ein C++-Struct, und was dort nicht deklariert ist, verschwindet. Jetzt
+deklariert, und auch im öffentlichen `VLCPlayerSource`-Typ (vorher konnten
+TypeScript-Nutzer sie gar nicht setzen).
+
+Die beiden Decoder-Felder haben `WithDefault<Int32, -1>`. Ohne den Sentinel käme
+ein weggelassenes Feld auf Fabric als `0` an, und Android hätte
+`setHWDecoderEnabled(false, false)` aufgerufen — Hardware-Dekodierung für jeden
+aus, der die Felder nie gesetzt hat. `-1` heißt „nicht gesetzt" und wird wie ein
+fehlender Key behandelt. Der iOS-Adapter vergleicht die drei Felder in
+`SourceEqual` mit.
+
+#### Mitbehoben
+
+- **Off-by-one aus 2c:** `initOptions` und `mediaOptions` verloren ihren letzten
+  Eintrag. Auf Android heißt das konkret: das `--repeat`, das der JS-Wrapper für
+  `repeat` anhängt, kam nie bei VLC an.
+- **Lifecycle-Listener-Leak:** jede View registrierte sich am Context und meldete
+  sich nie ab; der Context hielt damit jede je erzeugte Player-View am Leben.
+  `onDropViewInstance` ruft jetzt `dispose()`. Der `clear`-Prop ruft weiterhin nur
+  `cleanUpResources()`, weil die View danach weiterlebt.
+- **Beispiel-App:** neue Default-URL; die alte antwortete mit HTTP 403.
+
+#### Verifikation
+
+Gebaut: Android Old und New Arch (`:app:assembleDebug`, jeweils gegen die
+richtige Basisklasse — per `javap` geprüft) und iOS New Arch, dessen Adapter die
+neuen Struct-Felder vergleicht und damit nur kompiliert, wenn Codegen sie erzeugt
+hat. Im generierten `Props.h` steht `int hwDecoderEnabled{-1}`. iOS Old Arch
+wurde nicht neu gebaut; die einzige Änderung dort ist das Argument von
+`RCT_EXPORT_MODULE`.
+
+`npm test` prüft jetzt zusätzlich, dass die Spec kein `paperComponentName` mehr
+setzt.
+
+**Nicht verifiziert: Laufzeit auf 2d.** Der Emulator kam unter der Last des
+Hosts (Load ~20) nicht mehr bis zum Start der JS-Seite — mit dem 2c-Build
+genauso, also kein 2d-Effekt. Was 2c zur Laufzeit gezeigt hat, gilt für den
+Teil, den 2d nicht anfasst; Fabric-Lookup unter dem neuen Namen, der
+EventDispatcher-Pfad und die Commands über den generierten Delegate sind nur
+kompiliert, nicht ausgeführt. Das ist der nächste Schritt, und es ist der erste,
+der auf einer frei laufenden Maschine nur Minuten kostet: Beispiel-App starten,
+Wiedergabe, `onLoad`/`onProgress` im Log der App, Pause/Seek/Stop.
 
 ### Phase 3 — Ausbau der Old Architecture (später, als Checkliste)
 

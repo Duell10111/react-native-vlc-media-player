@@ -1,179 +1,192 @@
 package com.yuanzhou.vlc.vlcplayer
 
-import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
-import com.facebook.react.uimanager.SimpleViewManager
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.annotations.ReactProp
 
-class VlcPlayerViewManager : SimpleViewManager<VlcPlayerView>() {
+/**
+ * The one view manager for both architectures.
+ *
+ * Its base class comes from `src/newarch` or `src/oldarch`, picked in
+ * build.gradle. On the New Architecture props and commands arrive through the
+ * codegen delegate; on the Legacy Architecture props arrive through the
+ * `@ReactProp` annotations below and commands through the base class. The
+ * annotations are inert on the New Architecture.
+ */
+class VlcPlayerViewManager : VlcPlayerViewManagerSpec<VlcPlayerView>() {
 
-    override fun getName(): String = REACT_CLASS
+    override fun getName(): String = NAME
 
     override fun createViewInstance(reactContext: ThemedReactContext): VlcPlayerView =
         VlcPlayerView(reactContext)
 
     override fun onDropViewInstance(view: VlcPlayerView) {
-        view.cleanUpResources()
+        view.dispose()
+        super.onDropViewInstance(view)
     }
 
+    // Only read on the Legacy Architecture, where the view config comes from the
+    // native constants; Fabric uses the static view config codegen generates.
     override fun getExportedCustomDirectEventTypeConstants(): Map<String, Any> =
         VideoEventEmitter.Events.associateWith { mapOf("registrationName" to it) }
 
-    @ReactProp(name = PROP_CLEAR)
-    fun setClear(view: VlcPlayerView, @Suppress("UNUSED_PARAMETER") clear: Boolean) {
-        view.cleanUpResources()
-    }
+    // -- Props ----------------------------------------------------------------
 
-    @ReactProp(name = PROP_SRC)
-    fun setSrc(view: VlcPlayerView, src: ReadableMap?) {
-        // The Java version also read isNetwork and autoplay here with getBoolean,
-        // which throws on a missing key, and then discarded both values.
-        val uri = if (src != null && src.hasKey(PROP_SRC_URI)) src.getString(PROP_SRC_URI) else null
+    @ReactProp(name = PROP_SOURCE)
+    override fun setSource(view: VlcPlayerView, value: ReadableMap?) {
+        val uri = if (value != null && value.hasKey("uri")) value.getString("uri") else null
         if (uri.isNullOrEmpty()) {
             return
         }
-        view.setSrc(src)
+        view.setSrc(value)
     }
 
     @ReactProp(name = PROP_SUBTITLE_URI)
-    fun setSubtitleUri(view: VlcPlayerView, subtitleUri: String?) {
-        view.setSubtitleUri(subtitleUri)
-    }
-
-    @ReactProp(name = PROP_REPEAT, defaultBoolean = false)
-    fun setRepeat(view: VlcPlayerView, repeat: Boolean) {
-        view.setRepeatModifier(repeat)
-    }
-
-    @ReactProp(name = PROP_PROGRESS_UPDATE_INTERVAL, defaultFloat = 0f)
-    fun setInterval(view: VlcPlayerView, interval: Float) {
-        view.setProgressUpdateInterval(interval)
+    override fun setSubtitleUri(view: VlcPlayerView, value: String?) {
+        view.setSubtitleUri(value)
     }
 
     @ReactProp(name = PROP_PAUSED, defaultBoolean = false)
-    fun setPaused(view: VlcPlayerView, paused: Boolean) {
-        view.setPausedModifier(paused)
+    override fun setPaused(view: VlcPlayerView, value: Boolean) {
+        view.setPausedModifier(value)
     }
 
     @ReactProp(name = PROP_MUTED, defaultBoolean = false)
-    fun setMuted(view: VlcPlayerView, muted: Boolean) {
-        view.setMutedModifier(muted)
-    }
-
-    @ReactProp(name = PROP_VOLUME, defaultFloat = 1.0f)
-    fun setVolume(view: VlcPlayerView, volume: Float) {
-        view.setVolumeModifier(volume.toInt())
+    override fun setMuted(view: VlcPlayerView, value: Boolean) {
+        view.setMutedModifier(value)
     }
 
     @ReactProp(name = PROP_SEEK)
-    fun setSeek(view: VlcPlayerView, seek: Float) {
-        view.setPosition(seek)
-    }
-
-    @ReactProp(name = PROP_AUTO_ASPECT_RATIO, defaultBoolean = false)
-    fun setAutoAspectRatio(view: VlcPlayerView, auto: Boolean) {
-        view.setAutoAspectRatio(auto)
-    }
-
-    @ReactProp(name = PROP_RESUME, defaultBoolean = true)
-    fun setResume(view: VlcPlayerView, autoplay: Boolean) {
-        view.doResume(autoplay)
+    override fun setSeek(view: VlcPlayerView, value: Float) {
+        view.setPosition(value)
     }
 
     @ReactProp(name = PROP_RATE)
-    fun setRate(view: VlcPlayerView, rate: Float) {
-        view.setRateModifier(rate)
+    override fun setRate(view: VlcPlayerView, value: Float) {
+        view.setRateModifier(value)
+    }
+
+    @ReactProp(name = PROP_RESUME, defaultBoolean = true)
+    override fun setResume(view: VlcPlayerView, value: Boolean) {
+        view.doResume(value)
     }
 
     @ReactProp(name = PROP_VIDEO_ASPECT_RATIO)
-    fun setVideoAspectRatio(view: VlcPlayerView, aspectRatio: String?) {
-        view.setAspectRatio(aspectRatio)
+    override fun setVideoAspectRatio(view: VlcPlayerView, value: String?) {
+        view.setAspectRatio(value)
     }
 
     @ReactProp(name = PROP_AUDIO_TRACK)
-    fun setAudioTrack(view: VlcPlayerView, audioTrack: Int) {
-        view.setAudioTrack(audioTrack)
+    override fun setAudioTrack(view: VlcPlayerView, value: Int) {
+        view.setAudioTrack(value)
     }
 
     @ReactProp(name = PROP_TEXT_TRACK)
-    fun setTextTrack(view: VlcPlayerView, textTrack: Int) {
-        view.setTextTrack(textTrack)
+    override fun setTextTrack(view: VlcPlayerView, value: Int) {
+        view.setTextTrack(value)
     }
 
     @ReactProp(name = PROP_ACCEPT_INVALID_CERTIFICATES, defaultBoolean = false)
-    fun setAcceptInvalidCertificates(view: VlcPlayerView, accept: Boolean) {
-        view.setAcceptInvalidCertificates(accept)
+    override fun setAcceptInvalidCertificates(view: VlcPlayerView, value: Boolean) {
+        view.setAcceptInvalidCertificates(value)
     }
 
-    override fun getCommandsMap(): Map<String, Int> =
-        COMMANDS.withIndex().associate { (index, name) -> name to index + 1 }
+    @ReactProp(name = PROP_REPEAT, defaultBoolean = false)
+    override fun setRepeat(view: VlcPlayerView, value: Boolean) {
+        view.setRepeatModifier(value)
+    }
 
-    /**
-     * Retained for anything still dispatching integer ids by hand. codegen
-     * dispatches command names, so the String overload below is the live path.
-     */
-    @Deprecated("Dispatch commands by name")
-    override fun receiveCommand(root: VlcPlayerView, commandId: Int, args: ReadableArray?) {
-        if (commandId in 1..COMMANDS.size) {
-            receiveCommand(root, COMMANDS[commandId - 1], args)
+    @ReactProp(name = PROP_VOLUME, defaultFloat = 1.0f)
+    override fun setVolume(view: VlcPlayerView, value: Float) {
+        view.setVolumeModifier(value.toInt())
+    }
+
+    @ReactProp(name = PROP_AUTO_ASPECT_RATIO, defaultBoolean = false)
+    override fun setAutoAspectRatio(view: VlcPlayerView, value: Boolean) {
+        view.setAutoAspectRatio(value)
+    }
+
+    @ReactProp(name = PROP_PROGRESS_UPDATE_INTERVAL, defaultFloat = 0f)
+    override fun setProgressUpdateInterval(view: VlcPlayerView, value: Float) {
+        view.setProgressUpdateInterval(value)
+    }
+
+    @ReactProp(name = PROP_CLEAR)
+    override fun setClear(view: VlcPlayerView, value: Boolean) {
+        // Setting the prop at all tears the player down, whatever its value.
+        view.cleanUpResources()
+    }
+
+    // iOS-only props. The codegen interface requires a setter for every prop in
+    // the spec; without @ReactProp they stay unknown to the Legacy Architecture,
+    // as they always were.
+    override fun setAutoplay(view: VlcPlayerView, value: Boolean) {}
+
+    override fun setSnapshotPath(view: VlcPlayerView, value: String?) {}
+
+    // -- Commands -------------------------------------------------------------
+
+    override fun startRecording(view: VlcPlayerView, path: String?) {
+        view.startRecording(path)
+    }
+
+    override fun stopRecording(view: VlcPlayerView) {
+        view.stopRecording()
+    }
+
+    override fun stopPlayer(view: VlcPlayerView) {
+        view.stopPlayer()
+    }
+
+    override fun snapshot(view: VlcPlayerView, path: String?) {
+        if (path != null) {
+            view.doSnapshot(path)
         }
     }
 
-    override fun receiveCommand(root: VlcPlayerView, commandId: String, args: ReadableArray?) {
-        when (commandId) {
-            "startRecording" -> root.startRecording(stringArg(args))
-            "stopRecording" -> root.stopRecording()
-            "stopPlayer" -> root.stopPlayer()
-            "snapshot" -> stringArg(args)?.let { root.doSnapshot(it) }
-            "seek" -> if (args != null && hasArg(args)) root.setPosition(args.getDouble(0).toFloat())
-            "applyResume" -> if (args != null && hasArg(args)) root.doResume(args.getBoolean(0))
-            "applyPaused" -> if (args != null && hasArg(args)) root.setPausedModifier(args.getBoolean(0))
-            "applyAutoAspectRatio" -> if (args != null && hasArg(args)) root.setAutoAspectRatio(args.getBoolean(0))
-            "applyAspectRatio" -> root.setAspectRatio(stringArg(args))
-        }
+    override fun seek(view: VlcPlayerView, position: Float) {
+        view.setPosition(position)
+    }
+
+    override fun applyResume(view: VlcPlayerView, isResume: Boolean) {
+        view.doResume(isResume)
+    }
+
+    override fun applyPaused(view: VlcPlayerView, paused: Boolean) {
+        view.setPausedModifier(paused)
+    }
+
+    override fun applyAutoAspectRatio(view: VlcPlayerView, isAuto: Boolean) {
+        view.setAutoAspectRatio(isAuto)
+    }
+
+    override fun applyAspectRatio(view: VlcPlayerView, ratio: String?) {
+        view.setAspectRatio(ratio)
     }
 
     private companion object {
-        const val REACT_CLASS = "RCTVLCPlayer"
+        /**
+         * The same on both architectures, and the name in
+         * VlcPlayerViewNativeComponent.ts. It used to be `RCTVLCPlayer`, which
+         * Fabric never matched to the generated component.
+         */
+        const val NAME = "VlcPlayerView"
 
-        const val PROP_SRC = "source"
-        const val PROP_SRC_URI = "uri"
+        const val PROP_SOURCE = "source"
         const val PROP_SUBTITLE_URI = "subtitleUri"
-        const val PROP_REPEAT = "repeat"
         const val PROP_PAUSED = "paused"
         const val PROP_MUTED = "muted"
-        const val PROP_VOLUME = "volume"
         const val PROP_SEEK = "seek"
-        const val PROP_RESUME = "resume"
         const val PROP_RATE = "rate"
+        const val PROP_RESUME = "resume"
         const val PROP_VIDEO_ASPECT_RATIO = "videoAspectRatio"
-        const val PROP_AUTO_ASPECT_RATIO = "autoAspectRatio"
-        const val PROP_CLEAR = "clear"
-        const val PROP_PROGRESS_UPDATE_INTERVAL = "progressUpdateInterval"
-        const val PROP_TEXT_TRACK = "textTrack"
         const val PROP_AUDIO_TRACK = "audioTrack"
+        const val PROP_TEXT_TRACK = "textTrack"
         const val PROP_ACCEPT_INVALID_CERTIFICATES = "acceptInvalidCertificates"
-
-        /**
-         * The commands the JS spec (src/VlcPlayerViewNativeComponent.ts) declares.
-         * The first three keep their historical integer ids.
-         */
-        val COMMANDS = listOf(
-            "startRecording",
-            "stopRecording",
-            "snapshot",
-            "stopPlayer",
-            "seek",
-            "applyResume",
-            "applyPaused",
-            "applyAutoAspectRatio",
-            "applyAspectRatio",
-        )
-
-        fun hasArg(args: ReadableArray): Boolean = args.size() > 0 && !args.isNull(0)
-
-        fun stringArg(args: ReadableArray?): String? =
-            if (args != null && hasArg(args)) args.getString(0) else null
+        const val PROP_REPEAT = "repeat"
+        const val PROP_VOLUME = "volume"
+        const val PROP_AUTO_ASPECT_RATIO = "autoAspectRatio"
+        const val PROP_PROGRESS_UPDATE_INTERVAL = "progressUpdateInterval"
+        const val PROP_CLEAR = "clear"
     }
 }

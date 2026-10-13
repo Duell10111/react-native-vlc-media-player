@@ -2,30 +2,64 @@ package com.yuanzhou.vlc.vlcplayer
 
 import android.view.View
 import com.facebook.react.bridge.Arguments
-import com.facebook.react.bridge.ReactContext
 import com.facebook.react.bridge.WritableMap
-import com.facebook.react.uimanager.events.RCTEventEmitter
+import com.facebook.react.uimanager.UIManagerHelper
+import com.facebook.react.uimanager.events.Event
 
-internal class VideoEventEmitter(reactContext: ReactContext) {
-
-    private val eventEmitter: RCTEventEmitter = reactContext.getJSModule(RCTEventEmitter::class.java)
-
-    var viewId: Int = View.NO_ID
+/**
+ * Sends the player's events to JS through the EventDispatcher.
+ *
+ * Architecture-agnostic: [UIManagerHelper] picks the dispatcher from the view's
+ * react tag, and [Event.dispatchModern] falls back to the legacy emitter whenever
+ * the view has no surface id — which is exactly the Old Architecture case. The
+ * previous `getJSModule(RCTEventEmitter)` path only reached Fabric through the
+ * interop layer.
+ */
+internal class VideoEventEmitter(private val view: View) {
 
     fun loadStart() {
-        receiveEvent(EVENT_LOAD_START, Arguments.createMap())
+        dispatch(EVENT_LOAD_START, Arguments.createMap())
     }
 
     fun onVideoStateChange(payload: WritableMap) {
-        receiveEvent(EVENT_ON_VIDEO_STATE_CHANGE, payload)
+        dispatch(EVENT_ON_VIDEO_STATE_CHANGE, payload)
     }
 
     fun sendEvent(payload: WritableMap, event: String) {
-        receiveEvent(event, payload)
+        dispatch(event, payload)
     }
 
-    private fun receiveEvent(type: String, payload: WritableMap) {
-        eventEmitter.receiveEvent(viewId, type, payload)
+    private fun dispatch(name: String, payload: WritableMap) {
+        val viewId = view.id
+        if (viewId == View.NO_ID) {
+            // The mounting layer has not assigned a react tag yet, so there is
+            // nothing to address the event to.
+            return
+        }
+        // The spec declares `target` on the payloads, and iOS has always sent it.
+        payload.putInt("target", viewId)
+
+        val context = UIManagerHelper.getReactContext(view)
+        UIManagerHelper.getEventDispatcherForReactTag(context, viewId)
+            ?.dispatchEvent(VideoEvent(UIManagerHelper.getSurfaceId(view), viewId, name, payload))
+    }
+
+    private class VideoEvent(
+        surfaceId: Int,
+        viewId: Int,
+        private val name: String,
+        private val payload: WritableMap,
+    ) : Event<VideoEvent>(surfaceId, viewId) {
+
+        override fun getEventName(): String = name
+
+        override fun getEventData(): WritableMap = payload
+
+        // Events coalesce by default: of two with the same name and view, only
+        // the newer reaches JS. The RCTEventEmitter path never did that, and
+        // onVideoEnd, onSnapshot or two state changes in one frame must not be
+        // dropped.
+        override fun canCoalesce(): Boolean = false
     }
 
     companion object {

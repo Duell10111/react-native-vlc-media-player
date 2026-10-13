@@ -17,7 +17,10 @@
 
 @implementation RCTVLCPlayerManager
 
-RCT_EXPORT_MODULE();
+// React Native strips the "Manager" suffix, so the view is registered as
+// `VlcPlayerView` — the same name Fabric uses. The JS side asks for exactly one
+// name on both architectures (see VlcPlayerViewNativeComponent.ts).
+RCT_EXPORT_MODULE(VlcPlayerViewManager);
 
 @synthesize bridge = _bridge;
 
