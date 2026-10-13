@@ -178,7 +178,7 @@ export interface NativeProps extends ViewProps {
 
 type ComponentType = HostComponent<NativeProps>;
 
-interface NativeCommands {
+export interface NativeCommands {
   startRecording: (
     viewRef: React.ElementRef<ComponentType>,
     path: string

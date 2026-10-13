@@ -32,10 +32,11 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test": "npm run lint && npm run typecheck && npm run check-spec",
+    "test": "npm run lint && npm run typecheck && npm run check-spec && npm run check-babel",
     "example": "npm run --workspace react-native-vlc-media-player-example",
     "prepare": "bob build",
-    "check-spec": "node scripts/check-codegen-spec.js"
+    "check-spec": "node scripts/check-codegen-spec.js",
+    "check-babel": "node scripts/check-babel-codegen.js"
   },
   "keywords": [
     "vlc",
@@ -61,8 +62,10 @@
     "react-native": ">=0.74.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.7",
     "@eslint/js": "^10.0.1",
     "@expo/config-plugins": "^7.2.2",
+    "@react-native/babel-plugin-codegen": "0.81.5",
     "@types/react": "^19.1.17",
     "@types/react-native-vector-icons": "^6.4.18",
     "del-cli": "^7.0.0",

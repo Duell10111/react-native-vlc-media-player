@@ -41,6 +41,12 @@ jobs:
       - name: Check codegen spec
         run: npm run check-spec
 
+      # React Native's codegen Babel plugin runs on every file of a consuming app
+      # and rejects some valid TypeScript. Nothing in this repo's own build runs
+      # it, so an error there would otherwise only show up when an app bundles.
+      - name: Check codegen Babel plugin
+        run: npm run check-babel
+
       - name: Typecheck example
         run: npm run --workspace react-native-vlc-media-player-example typecheck
 
