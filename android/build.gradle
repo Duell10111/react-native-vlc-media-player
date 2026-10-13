@@ -1,6 +1,10 @@
 import groovy.json.JsonSlurper
 
 apply plugin: 'com.android.library'
+// No version here on purpose: the Kotlin Gradle plugin comes from the consuming
+// app's root build.gradle (every RN >= 0.71 template puts it on the classpath),
+// so the library always compiles with the app's Kotlin and never pins its own.
+apply plugin: 'org.jetbrains.kotlin.android'
 // Provides the `com.facebook.react:react-android` version. The plugin itself comes
 // from the consuming app's root build.gradle, which every RN >= 0.71 template has.
 apply plugin: 'com.facebook.react'
@@ -33,6 +37,14 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+}
+
+// Kotlin and Java have to target the same bytecode level (compileOptions above),
+// or the build fails with an inconsistent-JVM-target error.
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 

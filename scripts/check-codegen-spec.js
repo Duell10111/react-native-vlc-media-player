@@ -97,10 +97,10 @@ function nativeDeclarations() {
   };
 
   const androidManager = read(
-    'android/src/main/java/com/yuanzhou/vlc/vlcplayer/ReactVlcPlayerViewManager.java'
+    'android/src/main/java/com/yuanzhou/vlc/vlcplayer/VlcPlayerViewManager.kt'
   );
   const androidEvents = read(
-    'android/src/main/java/com/yuanzhou/vlc/vlcplayer/VideoEventEmitter.java'
+    'android/src/main/java/com/yuanzhou/vlc/vlcplayer/VideoEventEmitter.kt'
   );
   const iosManager = read('ios/RCTVLCPlayerManager.mm');
   const iosCore = read('ios/VlcPlayerView.swift');
@@ -110,7 +110,7 @@ function nativeDeclarations() {
 
   // @ReactProp(name = PROP_X) resolves through a constant, so read the constants.
   const androidConstants = new Map(
-    [...androidManager.matchAll(/String (PROP_\w+)\s*=\s*"(\w+)"/g)].map(
+    [...androidManager.matchAll(/const val (PROP_\w+)\s*=\s*"(\w+)"/g)].map(
       (m) => [m[1], m[2]]
     )
   );
@@ -122,11 +122,11 @@ function nativeDeclarations() {
   // The authoritative Android list is the Events array, not every EVENT_*
   // constant — EVENT_PROP_* are payload field names.
   const androidEventConstants = new Map(
-    [...androidEvents.matchAll(/String (EVENT_\w+)\s*=\s*"(\w+)"/g)].map(
+    [...androidEvents.matchAll(/const val (EVENT_\w+)\s*=\s*"(\w+)"/g)].map(
       (m) => [m[1], m[2]]
     )
   );
-  const eventsArray = androidEvents.match(/String\[\] Events = \{([^}]*)\}/);
+  const eventsArray = androidEvents.match(/val Events = arrayOf\(([^)]*)\)/);
   const androidEventNames = eventsArray
     ? all(eventsArray[1], /(EVENT_\w+)/g)
         .map((c) => androidEventConstants.get(c))

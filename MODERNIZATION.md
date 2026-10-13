@@ -568,24 +568,140 @@ mit einem Event-Dispatch-Rework im selben Diff zu vermischen macht das Bisecten
 einer Regression unzumutbar. Diese Phase ist rein verhaltenserhaltend und gegen
 die Beispiel-App aus Phase 1 verifizierbar.
 
-- [ ] Kotlin-Plugin in `android/build.gradle`:
+- [x] Kotlin-Plugin in `android/build.gradle`:
       `apply plugin: 'org.jetbrains.kotlin.android'`.
-- [ ] **Kotlin-Version nicht hart pinnen.** Eine Library, die ihre eigene
+- [x] **Kotlin-Version nicht hart pinnen.** Eine Library, die ihre eigene
       Version festnagelt, kollidiert mit der der App. Übliches Muster:
       `rootProject.ext.has("kotlinVersion") ? rootProject.ext.get("kotlinVersion") : "<fallback>"`.
       RN selbst konfiguriert Kotlin bereits, das Risiko für Konsumenten ist
       dadurch gering.
-- [ ] `jvmTarget` und `compileOptions` auf denselben Wert (17 bei aktueller AGP).
-- [ ] Kein explizites `implementation kotlin-stdlib` mit fixer Version — kommt
+      → Noch konsequenter: gar keine Version, auch kein Fallback. Das Plugin wird
+      ohne `buildscript`-Block angewendet und kommt damit aus dem Classpath der
+      App, den jedes RN-Template seit 0.71 setzt. Ein eigener Classpath-Eintrag
+      mit Fallback-Version hätte genau die Kollision erzeugt, die er vermeiden
+      soll („Kotlin Gradle plugin loaded multiple times").
+- [x] `jvmTarget` und `compileOptions` auf denselben Wert (17 bei aktueller AGP).
+      → Über `KotlinCompile.compilerOptions`, nicht das in Kotlin 2.x
+      abgekündigte `kotlinOptions`.
+- [x] Kein explizites `implementation kotlin-stdlib` mit fixer Version — kommt
       über das Plugin.
-- [ ] `ReactVlcPlayerView.java` (983 Zeilen) → `VlcPlayerView.kt`. Konverter der
+- [x] `ReactVlcPlayerView.java` (983 Zeilen) → `VlcPlayerView.kt`. Konverter der
       IDE als Ausgangspunkt, danach Handarbeit.
-- [ ] `ReactVlcPlayerViewManager.java` und `VideoEventEmitter.java` mitkonvertieren.
-- [ ] **Nullability ernst nehmen.** Der Java-Code nutzt `@Nullable` inkonsistent;
+      → 660 Zeilen. Die Differenz ist überwiegend toter Code, siehe unten.
+- [x] `ReactVlcPlayerViewManager.java` und `VideoEventEmitter.java` mitkonvertieren.
+      → Ebenso `ReactVlcPlayerPackage` (der Name bleibt: öffentliche API für
+      manuell verlinkende Apps). Der Manager heißt jetzt `VlcPlayerViewManager`.
+- [x] **Nullability ernst nehmen.** Der Java-Code nutzt `@Nullable` inkonsistent;
       die Konversion legt echte NPE-Risiken in den VLC-Event-Callbacks offen. Das
       ist der eigentliche Gewinn der Phase — die Fundstellen nicht mit `!!`
       zudecken.
-- [ ] Verifizieren: Beispiel-App auf Old *und* New Arch, bevor Phase 2d beginnt.
+      → Kein einziges `!!`. Fundstellen unten.
+- [x] Verifizieren: Beispiel-App auf Old *und* New Arch, bevor Phase 2d beginnt.
+      → Siehe „Verifikation".
+
+#### Nullability-Fundstellen
+
+Echte Absturz- oder Fehlerpfade, die die Konversion offengelegt hat:
+
+- **Player-Event-Listener** las `mMediaPlayer.isPlaying()` ungeprüft. VLC kann
+  ein Event noch nach `releasePlayer()` zustellen → NPE im VLC-Callback-Thread.
+- **`releasePlayer()`** prüfte nur `libvlc`. Wirft `new MediaPlayer(libvlc)`,
+  ist `libvlc` gesetzt und der Player `null` — der nächste Release stürzte ab.
+- **`createPlayer()`** lief los, bevor das `source`-Prop da war (die Surface
+  kann früher verfügbar sein), und warf eine NPE, die das pauschale
+  `catch (Exception)` schluckte. Jetzt ein früher Return, gleiche Wirkung.
+- **`getAudioTracks()`/`getSpuTracks()`** liefern `null`, auch wenn der Count
+  einen Moment vorher > 0 war. Wurde ungeprüft iteriert.
+- **`setSubtitleUri(null)`** (Prop entfernt) rief `addSlave(…, null, …)`.
+- **Snapshot mit bloßem Dateinamen:** `getParentFile()` ist `null`; die NPE wurde
+  als fehlgeschlagener Snapshot gemeldet.
+- **`setSrc` im Manager** las `isNetwork` und `autoplay` per `getBoolean`, das
+  bei fehlendem Key wirft — und verwarf beide Werte. Der JS-Wrapper setzt immer
+  beide, deshalb fiel es nie auf.
+
+Und zwei Dinge, die keine NPEs sind, aber dieselbe Kategorie: der
+Progress-`Runnable` wurde auf einem eigens gestarteten `Thread` erzeugt und dann
+doch auf den Main-Looper gepostet (jetzt direkt, ohne den Race auf das Feld), und
+`new Handler()` ohne Looper ist abgekündigt (jetzt explizit `Looper.getMainLooper()`).
+
+#### Toter Code, der nicht mitkonvertiert wurde
+
+`setSrc(String, boolean, boolean)` samt `src`/`netStrTag`, das nie zugewiesene
+Feld `surfaceView`, das nur geschriebene `surfaceVideo` (das bei jedem
+Surface-Wechsel eine `Surface` leakte), `screenWidth`/`screenHeight`, das nur
+geschriebene `mVideoInfo`, `startsWithValidScheme()`, die 90 auskommentierten
+Zeilen `changeSurfaceSize()` (die auf nicht existierende Konstanten verwiesen und
+so nie kompiliert hätten) und im Emitter `progressChanged()`, `error()` und
+`isPlaying()` — alle drei nie aufgerufen. Das klärt nebenbei den Befund aus 2a:
+`progressChanged()`, das nur `currentTime`/`duration` schickte, war gar nicht der
+Pfad, über den Progress-Events laufen.
+
+#### Verhaltenserhaltend übernommen, obwohl fragwürdig
+
+Bewusst nicht in 2c geändert, damit die Phase eine reine Konversion bleibt:
+
+- `initOptions` und `mediaOptions` verlieren ihren **letzten** Eintrag
+  (`i < size() - 1`). Behoben in 2d.
+- `progressUpdateInterval` baut den Player bei jedem Setzen neu auf.
+- `volume` geht als `(int)` an VLC, dessen Skala 0–100 ist; der Default `1.0`
+  wird zu Lautstärke 1.
+- `repeat` ist auf Android ein No-op; es wirkt nur über `--repeat` in
+  `initOptions` — was der Off-by-one bis 2d verschluckte, wenn es der letzte
+  Eintrag war.
+- `Dialog.setCallbacks` ist in libvlc global; bei mehreren Playern gewinnt der
+  zuletzt erzeugte.
+
+#### Autolinking liest Kotlin per Regex
+
+Ein Kommentar über der Klasse — „The class name is public API: …" — reichte, dass
+die Autolinking-Erkennung `name` als Package-Klasse eintrug und `PackageList.java`
+nicht mehr kompilierte. Die Erkennung ist eine Regex über den Quelltext, die das
+Wort *class* gefolgt von einem Wort und einem Doppelpunkt sucht. Der Kommentar in
+`ReactVlcPlayerPackage.kt` warnt jetzt davor. Gefährlich daran: Expo cacht das
+Ergebnis unter `android/build/generated/autolinking/` — ein Build mit altem
+Cache bleibt grün, erst der nächste saubere Prebuild bricht.
+
+#### Mitgefunden: Kein Konsument konnte bundeln
+
+Beim ersten Lauf der Beispiel-App überhaupt — vorher wurde sie nur kompiliert —
+brach Metro ab:
+
+```
+'Commands' is a reserved export and may only be used to export the result of codegenNativeCommands.
+```
+
+Ursache war `export { Commands as VlcPlayerViewCommands } from …` in
+`src/index.tsx`, seit Phase 2a. `@react-native/babel-plugin-codegen` ist Teil des
+Standard-Presets, läuft auf **jeder** Datei der App und lehnt jeden
+Export-Specifier mit lokalem Namen `Commands` ab. Das hätte jede App getroffen,
+die die Library importiert. Der Build der Library selbst sieht den Plugin nie:
+bob kopiert die Spec unverändert und überlässt die Transformation der App.
+
+Behoben durch Umbinden vor dem Export. Damit es nicht wiederkommt:
+`scripts/check-babel-codegen.js` (`npm run check-babel`, in `npm test` und CI)
+lässt den Plugin über jede Quelldatei laufen und prüft zusätzlich, dass für die
+Spec tatsächlich eine statische View-Config entsteht.
+
+Dass die Beispiel-App vorher gar nicht startete, lag an einem zweiten Punkt:
+`babel-preset-expo` lag nur verschachtelt unter `expo/node_modules` und war aus
+`example/` nicht auflösbar. Jetzt explizit als devDependency der Beispiel-App.
+
+#### Verifikation
+
+Old und New Arch bauen (`:app:assembleDebug`); `npm run check-spec` liest die
+Kotlin-Quellen. Laufzeit, erstmals im Emulator (Pixel, Android 16, New Arch):
+die App startet, der Manager erzeugt die View, VLC öffnet die Quelle, und
+Events erreichen JS — auf Fabric über den Interop-Layer, weil die JS-Seite noch
+nach `RCTVLCPlayer` fragt (siehe 2d).
+
+Zwei Befunde dabei, beide älter als 2c:
+
+- Die Default-URL der Beispiel-App (`commondatastorage.googleapis.com/…`)
+  antwortet mit HTTP 403. Die App konnte so nichts abspielen.
+- `onVideoLoad` kam **ohne** `videoSize` an — Android setzt `videoSize`,
+  `audioTracks` und `textTracks` nur, wenn sie existieren; die Spec deklariert
+  sie als immer vorhanden, und iOS liefert sie immer. Die Beispiel-App stürzte
+  daran ab, genau wie jeder Konsument, der den Typen glaubt. Behoben in 2d.
 
 ### Phase 2d — Android: Adapter & Gradle
 
