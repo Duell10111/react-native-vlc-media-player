@@ -81,7 +81,10 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
+      # v3 installs the SDK package `tools` by default, which the SDK repository
+      # no longer has — sdkmanager exits 1 before anything is built. v4 defaults
+      # to `platform-tools` only.
+      - uses: android-actions/setup-android@v4
 
       - run: npm ci
 
