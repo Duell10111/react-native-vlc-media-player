@@ -1,4 +1,6 @@
 import AVFoundation
+import AVKit
+import CoreMedia
 import Foundation
 import UIKit
 
@@ -43,6 +45,13 @@ public class VlcPlayerView: UIView {
   private var videoInfo: NSDictionary?
   private var resolvedSubtitleUri: URL?
   private var isPaused = false
+
+  #if os(tvOS)
+    /// The display manager this player last set criteria on, so release can reset
+    /// them even when the view has already left its window.
+    private var displayManager: AVDisplayManager?
+    private var displayCriteriaApplied = false
+  #endif
 
   // MARK: - Props
   //
@@ -186,6 +195,9 @@ public class VlcPlayerView: UIView {
     player = nil
     dialogProvider = nil
     delegateProxy = nil
+    #if os(tvOS)
+      resetDisplayCriteria()
+    #endif
   }
 
   // MARK: - Playback
@@ -427,6 +439,11 @@ public class VlcPlayerView: UIView {
 
 extension VlcPlayerView {
   func handleTimeChanged() {
+    #if os(tvOS)
+      // The track information is not always complete at `.playing`, so keep
+      // trying until a frame rate is known.
+      applyDisplayCriteriaIfNeeded()
+    #endif
     updateVideoProgress()
   }
 
@@ -450,6 +467,9 @@ extension VlcPlayerView {
 
     case .playing:
       isPaused = false
+      #if os(tvOS)
+        applyDisplayCriteriaIfNeeded()
+      #endif
       onVideoPlaying?([
         "seekable": player.isSeekable,
         "duration": player.media?.length.intValue ?? 0,
@@ -464,7 +484,10 @@ extension VlcPlayerView {
       ])
 
     case .error:
-      // The callback carries no detail; the error dialog is the only source.
+      // The state carries no detail; the error dialog, when VLC shows one, sends
+      // its own onVideoError with title and message. Report before releasing, or
+      // JS never learns that playback failed.
+      onVideoError?([:])
       releasePlayer()
 
     default:
@@ -495,6 +518,75 @@ extension VlcPlayerView {
     acceptInvalidCertificates
   }
 }
+
+// MARK: - Display criteria (tvOS)
+//
+// Switches the TV to the content's frame rate when the user has enabled
+// Settings > Video and Audio > Match Content > Match Frame Rate. Without it a TV
+// running at 50 Hz plays 24 or 60 fps content with judder, and the other way
+// round. Only the frame rate is matched: VLCKit 3 renders SDR, so the format
+// description deliberately carries no HDR extensions.
+
+#if os(tvOS)
+  extension VlcPlayerView {
+    fileprivate func applyDisplayCriteriaIfNeeded() {
+      guard #available(tvOS 17.0, *) else { return }
+      guard !displayCriteriaApplied,
+        let player = player,
+        let manager = window?.avDisplayManager,
+        manager.isDisplayCriteriaMatchingEnabled,
+        let video = Self.videoTrackFormat(player.media)
+      else {
+        return
+      }
+
+      var formatDescription: CMVideoFormatDescription?
+      CMVideoFormatDescriptionCreate(
+        allocator: kCFAllocatorDefault,
+        codecType: kCMVideoCodecType_H264,
+        width: video.width,
+        height: video.height,
+        extensions: nil,
+        formatDescriptionOut: &formatDescription
+      )
+      guard let formatDescription = formatDescription else { return }
+
+      manager.preferredDisplayCriteria = AVDisplayCriteria(
+        refreshRate: video.frameRate,
+        formatDescription: formatDescription
+      )
+      displayManager = manager
+      displayCriteriaApplied = true
+    }
+
+    fileprivate func resetDisplayCriteria() {
+      displayManager?.preferredDisplayCriteria = nil
+      displayManager = nil
+      displayCriteriaApplied = false
+    }
+
+    /// Frame rate and size of the first video track that reports a frame rate.
+    private static func videoTrackFormat(
+      _ media: VLCMedia?
+    ) -> (frameRate: Float, width: Int32, height: Int32)? {
+      guard let tracks = media?.tracksInformation as? [[String: Any]] else { return nil }
+      for track in tracks {
+        guard (track[VLCMediaTracksInformationType] as? String) == VLCMediaTracksInformationTypeVideo,
+          let rate = (track[VLCMediaTracksInformationFrameRate] as? NSNumber)?.floatValue,
+          let denominator = (track[VLCMediaTracksInformationFrameRateDenominator] as? NSNumber)?
+            .floatValue,
+          rate > 0, denominator > 0
+        else {
+          continue
+        }
+        let width = (track[VLCMediaTracksInformationVideoWidth] as? NSNumber)?.int32Value ?? 0
+        let height = (track[VLCMediaTracksInformationVideoHeight] as? NSNumber)?.int32Value ?? 0
+        return (rate / denominator, width, height)
+      }
+      return nil
+    }
+  }
+#endif
 
 // MARK: - VlcPlayerDelegateProxy
 
